@@ -1,0 +1,63 @@
+"""Portfolio + order endpoints."""
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from .. import alpaca_client as ac
+from ..services import portfolio
+
+router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
+
+
+class OrderRequest(BaseModel):
+    symbol: str
+    side: str  # buy / sell
+    qty: float | None = None  # None => auto-size to max_position_pct
+    order_type: str = "market"
+    limit_price: float | None = None
+    confirm_live: bool = False  # required for real-money orders
+
+
+@router.get("")
+def get_portfolio():
+    return portfolio.snapshot()
+
+
+@router.get("/orders")
+def get_orders(status: str = "all", limit: int = 50):
+    try:
+        return {"orders": ac.list_orders(status=status, limit=limit)}
+    except ac.AlpacaUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@router.post("/order")
+def submit_order(req: OrderRequest):
+    try:
+        return portfolio.place_order(
+            symbol=req.symbol,
+            side=req.side,
+            qty=req.qty,
+            order_type=req.order_type,
+            limit_price=req.limit_price,
+            source="manual",
+            confirm_live=req.confirm_live,
+        )
+    except portfolio.OrderRejected as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ac.AlpacaUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Order failed: {e}")
+
+
+@router.delete("/order/{order_id}")
+def cancel_order(order_id: str):
+    try:
+        ac.cancel_order(order_id)
+        return {"cancelled": order_id}
+    except ac.AlpacaUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Cancel failed: {e}")
