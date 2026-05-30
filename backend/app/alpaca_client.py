@@ -201,8 +201,16 @@ def get_latest_quote(symbol: str) -> dict[str, Any]:
     }
 
 
-def get_news(symbols: list[str], limit: int = 20) -> list[dict[str, Any]]:
-    """Recent news headlines for the given symbols."""
+def get_news(
+    symbols: list[str], limit: int = 20, include_external: bool = False
+) -> list[dict[str, Any]]:
+    """Recent news headlines for the given symbols.
+
+    The Alpaca feed is sourced entirely from Benzinga. ``include_external``
+    augments it with Yahoo Finance headlines (a broader publisher mix) and
+    de-dupes/sorts the combined set — used for the per-symbol Ticker view, not
+    the batched universe scan (which stays Alpaca-only for speed).
+    """
     from alpaca.data.requests import NewsRequest
 
     req = NewsRequest(symbols=",".join(symbols), limit=limit)
@@ -214,12 +222,111 @@ def get_news(symbols: list[str], limit: int = 20) -> list[dict[str, Any]]:
                 "headline": n.headline,
                 "summary": getattr(n, "summary", "") or "",
                 "symbols": n.symbols,
-                "source": getattr(n, "source", ""),
+                "source": getattr(n, "source", "") or "benzinga",
                 "url": getattr(n, "url", ""),
                 "created_at": n.created_at.isoformat() if n.created_at else None,
             }
         )
+
+    if include_external:
+        out = _merge_news(out, _yf_news(symbols, limit), limit)
     return out
+
+
+# Short TTL cache so repeated Ticker mounts don't re-hit (rate-limited) yfinance.
+_YF_NEWS_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_YF_NEWS_TTL = 600.0  # 10 min
+
+
+def _parse_news_dt(value: Any) -> dt.datetime | None:
+    """Coerce a unix ts or ISO string into a tz-aware UTC datetime."""
+    if value is None:
+        return None
+    try:
+        if isinstance(value, (int, float)):
+            return dt.datetime.fromtimestamp(value, tz=dt.timezone.utc)
+        d = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return d if d.tzinfo else d.replace(tzinfo=dt.timezone.utc)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _normalize_yf_item(raw: dict[str, Any], symbol: str) -> dict[str, Any] | None:
+    """Map a yfinance news item (new ``content`` or legacy flat schema) to ours."""
+    content = raw.get("content") if isinstance(raw.get("content"), dict) else None
+    if content:  # yfinance >= 0.2.x
+        headline = content.get("title") or ""
+        summary = content.get("summary") or content.get("description") or ""
+        source = ((content.get("provider") or {}).get("displayName")) or "Yahoo Finance"
+        url = (
+            (content.get("canonicalUrl") or {}).get("url")
+            or (content.get("clickThroughUrl") or {}).get("url")
+            or ""
+        )
+        created = _parse_news_dt(content.get("pubDate") or content.get("displayTime"))
+    else:  # legacy flat schema
+        headline = raw.get("title") or ""
+        summary = raw.get("summary") or ""
+        source = raw.get("publisher") or "Yahoo Finance"
+        url = raw.get("link") or ""
+        created = _parse_news_dt(raw.get("providerPublishTime"))
+    if not headline:
+        return None
+    return {
+        "headline": headline,
+        "summary": summary,
+        "symbols": [symbol],
+        "source": source,
+        "url": url,
+        "created_at": created.isoformat() if created else None,
+    }
+
+
+def _yf_news(symbols: list[str], limit: int) -> list[dict[str, Any]]:
+    """Best-effort Yahoo Finance headlines per symbol (cached, never raises)."""
+    import time
+
+    try:
+        import yfinance as yf
+    except Exception:  # noqa: BLE001 — yfinance is optional/best-effort
+        return []
+
+    now = time.time()
+    out: list[dict[str, Any]] = []
+    for sym in symbols:
+        cached = _YF_NEWS_CACHE.get(sym)
+        if cached and now - cached[0] < _YF_NEWS_TTL:
+            out.extend(cached[1])
+            continue
+        items: list[dict[str, Any]] = []
+        try:
+            for raw in (yf.Ticker(sym).news or [])[:limit]:
+                norm = _normalize_yf_item(raw, sym)
+                if norm:
+                    items.append(norm)
+        except Exception:  # noqa: BLE001 — best-effort
+            items = []
+        _YF_NEWS_CACHE[sym] = (now, items)
+        out.extend(items)
+    return out
+
+
+def _merge_news(
+    primary: list[dict[str, Any]], secondary: list[dict[str, Any]], limit: int
+) -> list[dict[str, Any]]:
+    """De-dupe (by URL, else headline) and sort newest-first."""
+    seen: set[str] = set()
+    merged: list[dict[str, Any]] = []
+    for item in (*primary, *secondary):
+        key = (item.get("url") or "").strip().lower() or (
+            item.get("headline") or ""
+        ).strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    merged.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    return merged[:limit]
 
 
 # ── Watchlists (mirrored to the Alpaca account for visibility) ──────────

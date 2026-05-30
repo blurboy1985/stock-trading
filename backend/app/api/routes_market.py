@@ -106,7 +106,7 @@ def bars(
 def news(symbols: str = Query(..., description="Comma-separated tickers"), limit: int = 20):
     syms = [s.strip().upper() for s in symbols.split(",") if s.strip()]
     try:
-        return {"news": ac.get_news(syms, limit=limit)}
+        return {"news": ac.get_news(syms, limit=limit, include_external=True)}
     except ac.AlpacaUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:  # noqa: BLE001
