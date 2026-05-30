@@ -41,7 +41,15 @@ export function Dashboard() {
   });
   const cancel = useMutation({
     mutationFn: (id: string) => api.cancelOrder(id),
-    onSuccess: refreshBook,
+    // Alpaca cancellation is async — the order sits in `pending_cancel` for a
+    // moment, so an immediate refetch would still show it. Drop it from the
+    // cache right away for instant feedback; the 10s poll reconciles after.
+    onSuccess: (_data, id) => {
+      qc.setQueryData<{ orders: any[] }>(["orders", "open"], (prev) =>
+        prev ? { orders: prev.orders.filter((o) => o.id !== id) } : prev,
+      );
+      qc.invalidateQueries({ queryKey: ["portfolio"] });
+    },
   });
 
   if (portfolio.isLoading) return <Spinner label="Loading portfolio…" />;

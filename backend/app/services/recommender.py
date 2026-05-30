@@ -69,6 +69,16 @@ def generate(persist: bool = True) -> dict[str, Any]:
     news = _news_by_symbol(universe)
     start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=400)
 
+    # With the LLM sentiment backend, score every distinct headline in one
+    # Claude call up front. The per-symbol scoring below then hits the cache
+    # instead of firing a separate ~5s CLI call per symbol (which turned a
+    # refresh into a multi-minute hang).
+    if cfg["sentiment_backend"] == "llm":
+        from ..strategies import sentiment_llm
+
+        all_items = [item for items in news.values() for item in items]
+        sentiment_llm.prewarm(all_items)
+
     # 1) Batch-fetch bars (needed up front for breadth + cross-sectional momentum).
     bars_by_symbol: dict[str, Any] = {}
     errors: dict[str, str] = {}

@@ -26,6 +26,15 @@ from ..config import settings
 
 _TIMEOUT_S = 90.0  # hard cap so a wedged CLI can't stall a scoring cycle
 
+# Headline-keyed memo of polarities. The recommender scores each symbol
+# separately, but news items are shared across symbols and a headline's
+# sentiment is stable — so we query Claude once per *unseen* headline and reuse
+# the result. Without this, a refresh fires one ~5s CLI call per symbol and a
+# 12-symbol universe takes minutes (see ``prewarm`` below). Bounded so a
+# long-running process can't grow it without limit.
+_CACHE: dict[str, float] = {}
+_CACHE_MAX = 2000
+
 # Stable instruction prompt. The Agent SDK has no JSON-schema enforcement, so we
 # instruct the model to emit only JSON and parse it defensively.
 _SYSTEM = (
@@ -106,10 +115,39 @@ def batch_polarity(
 ) -> dict[str, float]:
     """Score a batch of news items with Claude → ``{item_text: polarity}``.
 
-    Returns ``{}`` on any failure so the caller falls back to the lexicon.
+    Headlines already in :data:`_CACHE` are served from it; only unseen
+    headlines hit Claude (a single call for the whole unseen batch). Returns
+    ``{}`` on any failure so the caller falls back to the lexicon.
     """
     if not items:
         return {}
+
+    # Partition into already-scored vs. needs-a-query (deduped by text).
+    out: dict[str, float] = {}
+    todo: dict[str, dict[str, Any]] = {}
+    for it in items:
+        text = _item_text(it)
+        if not text:
+            continue
+        if text in _CACHE:
+            out[text] = _CACHE[text]
+        else:
+            todo.setdefault(text, it)
+
+    if todo:
+        fresh = _query_items(list(todo.values()), model)
+        for text, polarity in fresh.items():
+            if len(_CACHE) < _CACHE_MAX:
+                _CACHE[text] = polarity
+            out[text] = polarity
+
+    return out
+
+
+def _query_items(
+    items: list[dict[str, Any]], model: str | None
+) -> dict[str, float]:
+    """One Claude call for ``items`` → ``{item_text: polarity}`` (``{}`` on error)."""
     prompt, index_to_text = _build_prompt(items)
     if not index_to_text:
         return {}
@@ -130,3 +168,13 @@ def batch_polarity(
         except (KeyError, TypeError, ValueError):
             continue
     return out
+
+
+def prewarm(items: list[dict[str, Any]], model: str | None = None) -> None:
+    """Score every distinct headline in ``items`` in a single Claude call so the
+    recommender's per-symbol :func:`batch_polarity` calls become cache hits.
+
+    Best-effort: any failure leaves the cache untouched and the per-symbol path
+    falls back to the offline lexicon.
+    """
+    batch_polarity(items, model=model)

@@ -65,6 +65,25 @@ def _mirror_to_alpaca() -> None:
         pass
 
 
+@router.post("/watchlist/sync")
+def sync_watchlist():
+    """Push the current watchlist to a named Alpaca watchlist so it's visible
+    on the Alpaca site. Returns what was synced.
+
+    NOTE: this static route must be declared *before* the ``/watchlist/{symbol}``
+    route below — FastAPI matches in declaration order, so otherwise a POST to
+    ``/watchlist/sync`` is captured by ``add_symbol`` (adding a bogus "SYNC").
+    """
+    if not env_settings.has_credentials:
+        raise HTTPException(status_code=503, detail="Alpaca credentials not configured.")
+    try:
+        return ac.sync_watchlist(recommender.get_universe())
+    except ac.AlpacaUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Watchlist sync failed: {e}")
+
+
 @router.post("/watchlist/{symbol}")
 def add_symbol(symbol: str):
     symbol = symbol.upper().strip()
@@ -87,17 +106,3 @@ def remove_symbol(symbol: str):
         db.commit()
     _mirror_to_alpaca()
     return {"watchlist": recommender.get_universe()}
-
-
-@router.post("/watchlist/sync")
-def sync_watchlist():
-    """Push the current watchlist to a named Alpaca watchlist so it's visible
-    on the Alpaca site. Returns what was synced."""
-    if not env_settings.has_credentials:
-        raise HTTPException(status_code=503, detail="Alpaca credentials not configured.")
-    try:
-        return ac.sync_watchlist(recommender.get_universe())
-    except ac.AlpacaUnavailable as e:
-        raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"Watchlist sync failed: {e}")
