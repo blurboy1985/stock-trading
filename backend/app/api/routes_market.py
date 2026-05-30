@@ -1,4 +1,4 @@
-"""Market data endpoints: quotes, historical bars, news, market clock."""
+"""Market data endpoints: quotes, historical bars, news, market clock, regime."""
 from __future__ import annotations
 
 import datetime as dt
@@ -6,6 +6,9 @@ import datetime as dt
 from fastapi import APIRouter, HTTPException, Query
 
 from .. import alpaca_client as ac
+from ..config import settings
+from ..services import runtime_settings
+from ..strategies import regime as regime_mod
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
@@ -16,6 +19,35 @@ def market_clock():
         return ac.get_clock()
     except ac.AlpacaUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+
+@router.get("/regime")
+def market_regime():
+    """Current broad-market regime snapshot for the UI.
+
+    Prefers the scheduler's last computed regime (which includes breadth);
+    falls back to a fresh benchmark-only read when no cycle has run yet.
+    """
+    if not settings.has_credentials:
+        return {"configured": False, "regime": None}
+
+    try:
+        from ..services.scheduler import LATEST
+
+        if LATEST.get("regime"):
+            return {"configured": True, "regime": LATEST["regime"]}
+    except Exception:  # noqa: BLE001
+        pass
+
+    bench = runtime_settings.get("benchmark_symbol")
+    start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=400)
+    try:
+        df = ac.get_bars(bench, start=start)
+    except ac.AlpacaUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Regime fetch failed: {e}")
+    return {"configured": True, "regime": regime_mod.market_regime(df)}
 
 
 @router.get("/quote/{symbol}")

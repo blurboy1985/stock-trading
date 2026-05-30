@@ -16,6 +16,7 @@ def get_recommendations(refresh: bool = Query(False)):
         run_cycle(force=True)
     return {
         "generated_at": LATEST.get("generated_at"),
+        "regime": LATEST.get("regime"),
         "recommendations": LATEST.get("recommendations", []),
         "top_buys": LATEST.get("top_buys", []),
         "top_sells": LATEST.get("top_sells", []),

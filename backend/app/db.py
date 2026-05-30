@@ -35,3 +35,34 @@ def init_db() -> None:
     from . import models  # noqa: F401  (register models on Base)
 
     Base.metadata.create_all(bind=engine)
+    _migrate_sqlite()
+
+
+# Lightweight additive migrations: SQLAlchemy's create_all won't ALTER existing
+# tables, so add any new nullable columns by hand. Idempotent and SQLite-only.
+_ADDED_COLUMNS = {
+    "recommendations": {
+        "conviction": "FLOAT",
+        "rank_score": "FLOAT",
+        "regime": "VARCHAR(16)",
+    },
+}
+
+
+def _migrate_sqlite() -> None:
+    if not settings.database_url.startswith("sqlite"):
+        return
+    from sqlalchemy import text
+
+    with engine.begin() as conn:
+        for table, cols in _ADDED_COLUMNS.items():
+            existing = {
+                row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))
+            }
+            if not existing:
+                continue  # table not created yet (shouldn't happen post create_all)
+            for name, decl in cols.items():
+                if name not in existing:
+                    conn.execute(
+                        text(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+                    )

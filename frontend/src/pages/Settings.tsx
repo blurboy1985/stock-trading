@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type AppSettings } from "../api/client";
 import { Panel, Spinner, ErrorBanner, fmtPct } from "../components/ui";
 
-const SIGNALS = ["technical", "volatility", "sentiment", "fundamentals"];
+const SIGNALS = ["technical", "volatility", "momentum", "sentiment", "fundamentals"];
 
 export function Settings() {
   const qc = useQueryClient();
@@ -78,7 +78,7 @@ export function Settings() {
 
       {/* Signal weights */}
       <Panel title="Signal Weights">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {SIGNALS.map((s) => (
             <label key={s} className="block">
               <span className="text-xs text-slate-400 capitalize">{s}</span>
@@ -99,7 +99,60 @@ export function Settings() {
         </div>
         <p className="text-xs text-slate-500 mt-2">
           Weights are auto-normalized across active signals at scoring time.
+          (Sentiment & fundamentals are skipped in backtests.)
         </p>
+      </Panel>
+
+      {/* Quant controls */}
+      <Panel title="Quant Controls">
+        <div className="flex flex-wrap gap-6 mb-4">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={draft.regime_filter ?? true}
+              onChange={(e) => update("regime_filter", e.target.checked)}
+              className="w-4 h-4 accent-blue-500"
+            />
+            Market regime filter (dampen longs in risk-off tape)
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={draft.use_vol_sizing ?? true}
+              onChange={(e) => update("use_vol_sizing", e.target.checked)}
+              className="w-4 h-4 accent-blue-500"
+            />
+            Volatility-targeted position sizing
+          </label>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <label className="block">
+            <span className="text-xs text-slate-400">Benchmark</span>
+            <input
+              value={draft.benchmark_symbol ?? "SPY"}
+              onChange={(e) => update("benchmark_symbol", e.target.value.toUpperCase())}
+              className="inp"
+            />
+          </label>
+          <NumField
+            label="Target risk/position"
+            value={draft.target_risk_pct ?? 0.0025}
+            step={0.0005}
+            onChange={(v) => update("target_risk_pct", v)}
+          />
+          <NumField
+            label="Min $ volume"
+            value={draft.min_dollar_volume ?? 5_000_000}
+            step={1_000_000}
+            onChange={(v) => update("min_dollar_volume", v)}
+          />
+          <NumField
+            label="Min price"
+            value={draft.min_price ?? 5}
+            step={1}
+            onChange={(v) => update("min_price", v)}
+          />
+        </div>
       </Panel>
 
       {/* Risk */}
@@ -192,6 +245,31 @@ function StatusRow({
       <span className={color}>{ok ? "●" : "○"}</span>
       <span>{label}</span>
     </div>
+  );
+}
+
+function NumField({
+  label,
+  value,
+  onChange,
+  step = 1,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  step?: number;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs text-slate-400">{label}</span>
+      <input
+        type="number"
+        value={value}
+        step={step}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="inp"
+      />
+    </label>
   );
 }
 

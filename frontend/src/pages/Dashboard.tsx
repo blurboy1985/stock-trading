@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { Panel, Stat, Spinner, ErrorBanner, fmtUsd, fmtPct } from "../components/ui";
+import { RegimeBanner } from "../components/RegimeBanner";
 
 export function Dashboard() {
   const portfolio = useQuery({
@@ -33,6 +34,7 @@ export function Dashboard() {
 
   return (
     <div className="space-y-5">
+      <RegimeBanner regime={reco.data?.regime} />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat label="Equity" value={fmtUsd(acct?.equity)} />
         <Stat

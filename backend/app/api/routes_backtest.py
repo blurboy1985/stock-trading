@@ -9,6 +9,8 @@ from sqlalchemy import select
 
 from .. import alpaca_client as ac
 from ..backtest.engine import BacktestConfig, run_backtest
+from ..backtest.sweep import parameter_sweep
+from ..backtest.walkforward import walk_forward
 from ..db import SessionLocal
 from ..models import BacktestRun
 
@@ -27,13 +29,27 @@ class BacktestRequest(BaseModel):
     take_profit_pct: float | None = None
     position_size_pct: float = 0.0
     warmup: int = 50
+    # ── Quant controls ────────────────────────────────────────────────
+    regime_filter: bool = False
+    benchmark_symbol: str = "SPY"
+    use_vol_sizing: bool = False
+    target_risk_pct: float = 0.0025
+    max_position_pct: float = 0.10
+    min_dollar_volume: float = 0.0
+    min_price: float = 0.0
+    # Walk-forward / sweep only.
+    folds: int = 4
 
 
-@router.post("/run")
-def run(req: BacktestRequest):
+def _fetch_bars(req: "BacktestRequest") -> dict:
+    """Fetch aligned bars for the universe (+ benchmark when regime is on)."""
     symbols = [s.strip().upper() for s in req.symbols if s.strip()]
     if not symbols:
         raise HTTPException(status_code=400, detail="no symbols provided")
+    # When the regime filter is on, the benchmark must be in the bar set so the
+    # engine can read its trend (it also trades, just like SPY in the watchlist).
+    if req.regime_filter and req.benchmark_symbol.upper() not in symbols:
+        symbols.append(req.benchmark_symbol.upper())
 
     bars_by_symbol = {}
     try:
@@ -48,8 +64,11 @@ def run(req: BacktestRequest):
 
     if not bars_by_symbol:
         raise HTTPException(status_code=400, detail="no historical data for symbols")
+    return bars_by_symbol
 
-    config = BacktestConfig(
+
+def _build_config(req: "BacktestRequest", **overrides) -> BacktestConfig:
+    return BacktestConfig(
         starting_cash=req.starting_cash,
         weights=req.weights,
         commission=req.commission,
@@ -58,10 +77,39 @@ def run(req: BacktestRequest):
         take_profit_pct=req.take_profit_pct,
         position_size_pct=req.position_size_pct,
         warmup=req.warmup,
+        regime_filter=req.regime_filter,
+        benchmark_symbol=req.benchmark_symbol.upper(),
+        use_vol_sizing=req.use_vol_sizing,
+        target_risk_pct=req.target_risk_pct,
+        max_position_pct=req.max_position_pct,
+        min_dollar_volume=req.min_dollar_volume,
+        min_price=req.min_price,
+        **overrides,
     )
-    result = run_backtest(bars_by_symbol, config)
+
+
+def _correlation(bars_by_symbol: dict) -> dict:
+    """Pairwise correlation of daily returns across the tested universe."""
+    import pandas as pd
+
+    closes = pd.DataFrame({s: df["close"] for s, df in bars_by_symbol.items()})
+    rets = closes.pct_change().dropna(how="all")
+    if rets.shape[1] < 2 or len(rets) < 3:
+        return {"symbols": list(bars_by_symbol.keys()), "matrix": []}
+    corr = rets.corr().round(2)
+    return {
+        "symbols": list(corr.columns),
+        "matrix": corr.where(corr.notna(), None).values.tolist(),
+    }
+
+
+@router.post("/run")
+def run(req: BacktestRequest):
+    bars_by_symbol = _fetch_bars(req)
+    result = run_backtest(bars_by_symbol, _build_config(req))
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
+    result["correlation"] = _correlation(bars_by_symbol)
 
     with SessionLocal() as db:
         row = BacktestRun(
@@ -76,6 +124,24 @@ def run(req: BacktestRequest):
         db.add(row)
         db.commit()
         result["run_id"] = row.id
+    return result
+
+
+@router.post("/walkforward")
+def walkforward(req: BacktestRequest):
+    """Out-of-sample walk-forward validation (threshold picked per train fold)."""
+    bars_by_symbol = _fetch_bars(req)
+    result = walk_forward(bars_by_symbol, _build_config(req), folds=req.folds)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/sweep")
+def sweep(req: BacktestRequest):
+    """Parameter-sensitivity sweep over (buy_threshold × tech/vol tilt)."""
+    bars_by_symbol = _fetch_bars(req)
+    result = parameter_sweep(bars_by_symbol, _build_config(req))
     return result
 
 

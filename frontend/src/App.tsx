@@ -5,11 +5,13 @@ import { Dashboard } from "./pages/Dashboard";
 import { Recommendations } from "./pages/Recommendations";
 import { Ticker } from "./pages/Ticker";
 import { Backtest } from "./pages/Backtest";
+import { Research } from "./pages/Research";
 import { Settings } from "./pages/Settings";
 
 const tabs = [
   { to: "/", label: "Dashboard", end: true },
   { to: "/recommendations", label: "Recommendations" },
+  { to: "/research", label: "Research" },
   { to: "/backtest", label: "Backtest" },
   { to: "/settings", label: "Settings" },
 ];
@@ -59,6 +61,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/recommendations" element={<Recommendations />} />
+          <Route path="/research" element={<Research />} />
           <Route path="/ticker/:symbol" element={<Ticker />} />
           <Route path="/backtest" element={<Backtest />} />
           <Route path="/settings" element={<Settings />} />
