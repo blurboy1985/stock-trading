@@ -42,6 +42,9 @@ Do this before your first session; revisit only when your strategy changes.
 
 - **Watchlist** — add/remove the tickers you want ranked (default is 10 liquid
   large-caps + SPY). This *is* your universe; the engine only scores these.
+  Changes **auto-sync to a "StockSim" watchlist on your Alpaca account** (and a
+  **Sync to Alpaca** button forces it), so you can see the same list when you log
+  in to the Alpaca site.
 - **Signal weights** — how much each family counts toward the composite score
   (technical / volatility / momentum / sentiment / fundamentals). Auto-normalized
   across active signals. Leave at defaults until a backtest tells you otherwise.
@@ -198,6 +201,26 @@ The **Research** tab gives a regime detail panel and a **relative-strength
 leaderboard** — the universe sorted by the cross-sectional momentum signal, with
 raw momentum and ATR%. Use it to see *what's leading* independent of the
 composite BUY/SELL call.
+
+---
+
+## What syncs to your Alpaca account
+
+Everything that matters is **Alpaca-native** — the app uses your Alpaca paper
+account as the source of truth, so logging in to the Alpaca site shows the same
+state:
+
+| In the app | On the Alpaca site |
+|------------|--------------------|
+| Buy / Sell / close position | Orders & fills in your paper order history |
+| Cancel (Open Orders panel) | The order is cancelled on Alpaca |
+| Stop-loss / take-profit bracket | The attached OCO child orders |
+| Open positions, equity, cash, buying power | Read live from your Alpaca account |
+| Watchlist | Mirrored to a **"StockSim"** watchlist (auto + manual sync) |
+
+Recommendations, the regime read, and backtests are computed locally from Alpaca
+market data — they're analysis layers, not account state, so they don't appear on
+the Alpaca site (by nature).
 
 ---
 
