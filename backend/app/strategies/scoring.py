@@ -113,13 +113,21 @@ def evaluate_symbol(
     momentum: SignalResult | None = None,
     regime_score: float | None = None,
     liquidity_warning: str | None = None,
+    sentiment_backend: str = "lexicon",
+    sentiment_halflife_days: float = 3.0,
+    sentiment_lm_weight: float = 0.5,
+    sentiment_llm_model: str | None = None,
+    sector_baseline: dict[str, float] | None = None,
+    info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run every enabled signal on a symbol and return the combined decision.
 
     ``bars`` is an OHLCV DataFrame; ``news`` is optional pre-fetched headlines.
     ``momentum`` is a pre-computed cross-sectional signal (ranked across the
     universe by the caller). ``liquidity_warning`` — when set, the name is too
-    thin to buy and any BUY is downgraded to HOLD.
+    thin to buy and any BUY is downgraded to HOLD. ``sector_baseline`` /
+    ``info`` feed sector-relative fundamentals; the ``sentiment_*`` knobs tune
+    the news signal (and select the optional LLM backend).
     Sentiment/fundamentals can be disabled (e.g. in fast backtests).
     """
     results: dict[str, SignalResult] = {
@@ -129,9 +137,17 @@ def evaluate_symbol(
     if momentum is not None:
         results["momentum"] = momentum
     if include_sentiment:
-        results["sentiment"] = score_headlines(news or [])
+        results["sentiment"] = score_headlines(
+            news or [],
+            halflife_days=sentiment_halflife_days,
+            lm_weight=sentiment_lm_weight,
+            backend=sentiment_backend,
+            llm_model=sentiment_llm_model,
+        )
     if include_fundamentals:
-        results["fundamentals"] = fundamentals_signal(symbol)
+        results["fundamentals"] = fundamentals_signal(
+            symbol, sector_baseline=sector_baseline, info=info
+        )
 
     decision = combine(results, weights, regime_score=regime_score)
     decision["symbol"] = symbol

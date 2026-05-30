@@ -16,6 +16,10 @@ numpy>=1.26
 # Sentiment
 vaderSentiment>=3.3.2
 
+# Optional LLM sentiment backend (off by default). Drives Claude via the local
+# Claude Code CLI subscription — requires the `claude` CLI installed & logged in.
+claude-agent-sdk>=0.1
+
 # Persistence
 SQLAlchemy>=2.0
 
