@@ -11,24 +11,24 @@ export function PriceChart({ bars }: { bars: Bar[] }) {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: "#141a24" },
-        textColor: "#94a3b8",
+        background: { type: ColorType.Solid, color: "#ffffff" },
+        textColor: "#6e6886",
       },
       grid: {
-        vertLines: { color: "#1c2430" },
-        horzLines: { color: "#1c2430" },
+        vertLines: { color: "#efedf6" },
+        horzLines: { color: "#efedf6" },
       },
-      rightPriceScale: { borderColor: "#2a3543" },
-      timeScale: { borderColor: "#2a3543", timeVisible: false },
+      rightPriceScale: { borderColor: "#e7e4f1" },
+      timeScale: { borderColor: "#e7e4f1", timeVisible: false },
       autoSize: true,
     });
     chartRef.current = chart;
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
+      upColor: "#1f9e6b",
+      downColor: "#dc4b5a",
       borderVisible: false,
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
+      wickUpColor: "#1f9e6b",
+      wickDownColor: "#dc4b5a",
     });
     series.setData(
       bars.map((b) => ({

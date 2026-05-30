@@ -21,10 +21,10 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <div className={`bg-panel border border-edge rounded-xl p-4 ${className}`}>
+    <div className={`bg-panel border border-edge rounded-2xl p-5 shadow-card ${className}`}>
       {title && (
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em]">
             {title}
           </h3>
           {right}
@@ -49,9 +49,9 @@ export function Stat({
   const toneCls =
     tone === "up" ? "text-buy" : tone === "down" ? "text-sell" : "text-slate-100";
   return (
-    <div className="bg-panel2 rounded-lg px-4 py-3">
-      <div className="text-xs text-slate-400">{label}</div>
-      <div className={`text-2xl font-bold ${toneCls}`}>{value}</div>
+    <div className="bg-panel border border-edge rounded-2xl px-4 py-3.5 shadow-card">
+      <div className="text-xs font-medium text-slate-400">{label}</div>
+      <div className={`text-2xl font-extrabold tracking-tight ${toneCls}`}>{value}</div>
       {sub && <div className="text-xs text-slate-400 mt-0.5">{sub}</div>}
     </div>
   );
@@ -92,7 +92,7 @@ export function ScoreBar({ score }: { score: number }) {
 export function Spinner({ label }: { label?: string }) {
   return (
     <div className="flex items-center gap-2 text-slate-400 text-sm py-8 justify-center">
-      <div className="h-4 w-4 border-2 border-slate-500 border-t-transparent rounded-full animate-spin" />
+      <div className="h-4 w-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
       {label ?? "Loading…"}
     </div>
   );

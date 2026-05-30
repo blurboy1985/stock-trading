@@ -21,24 +21,24 @@ export function EquityChart({
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: "#141a24" },
-        textColor: "#94a3b8",
+        background: { type: ColorType.Solid, color: "#ffffff" },
+        textColor: "#6e6886",
       },
-      grid: { vertLines: { color: "#1c2430" }, horzLines: { color: "#1c2430" } },
-      rightPriceScale: { borderColor: "#2a3543" },
-      timeScale: { borderColor: "#2a3543" },
+      grid: { vertLines: { color: "#efedf6" }, horzLines: { color: "#efedf6" } },
+      rightPriceScale: { borderColor: "#e7e4f1" },
+      timeScale: { borderColor: "#e7e4f1" },
       autoSize: true,
     });
     chartRef.current = chart;
 
-    const stratSeries = chart.addSeries(LineSeries, { color: "#3b82f6", lineWidth: 2 });
+    const stratSeries = chart.addSeries(LineSeries, { color: "#5b2bd9", lineWidth: 2 });
     stratSeries.setData(
       strategy.map((p) => ({ time: p.date.slice(0, 10) as any, value: p.equity })),
     );
 
     if (benchmark && benchmark.length) {
       const benchSeries = chart.addSeries(LineSeries, {
-        color: "#64748b",
+        color: "#9d97ae",
         lineWidth: 1,
         lineStyle: 2,
       });

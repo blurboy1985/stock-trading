@@ -8,6 +8,7 @@ import { Backtest } from "./pages/Backtest";
 import { Research } from "./pages/Research";
 import { History } from "./pages/History";
 import { Settings } from "./pages/Settings";
+import { DisclaimerFooter } from "./components/Disclosures";
 
 const tabs = [
   { to: "/", label: "Dashboard", end: true },
@@ -23,11 +24,11 @@ export default function App() {
   const broker = settings.data?.broker;
 
   return (
-    <div className="min-h-full">
-      <header className="border-b border-edge bg-panel/60 backdrop-blur sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-5 flex items-center gap-6 h-14">
-          <span className="font-bold text-lg">
-            📈 Stock<span className="text-accent">Sim</span>
+    <div className="min-h-full flex flex-col">
+      <header className="border-b border-edge bg-panel/80 backdrop-blur-md sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-5 flex items-center gap-7 h-16">
+          <span className="font-extrabold text-lg tracking-tight">
+            Stock<span className="text-accent">Sim</span>
           </span>
           <nav className="flex gap-1 flex-1">
             {tabs.map((t) => (
@@ -36,8 +37,10 @@ export default function App() {
                 to={t.to}
                 end={t.end}
                 className={({ isActive }) =>
-                  `px-3 py-1.5 rounded-lg text-sm ${
-                    isActive ? "bg-accent/20 text-accent" : "text-slate-300 hover:bg-panel2"
+                  `px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                    isActive
+                      ? "bg-accent/10 text-accent"
+                      : "text-slate-400 hover:bg-panel2 hover:text-slate-200"
                   }`
                 }
               >
@@ -47,10 +50,10 @@ export default function App() {
           </nav>
           {broker && (
             <span
-              className={`text-xs px-2 py-1 rounded border ${
+              className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
                 broker.live_trading_enabled
-                  ? "bg-sell/15 text-sell border-sell/40"
-                  : "bg-buy/15 text-buy border-buy/40"
+                  ? "bg-sell/10 text-sell border-sell/30"
+                  : "bg-buy/10 text-buy border-buy/30"
               }`}
             >
               {broker.live_trading_enabled ? "● LIVE" : "● PAPER"}
@@ -59,7 +62,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-5 py-6">
+      <main className="max-w-6xl mx-auto w-full px-5 py-7 flex-1">
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/recommendations" element={<Recommendations />} />
@@ -70,6 +73,12 @@ export default function App() {
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
+
+      <footer className="border-t border-edge bg-panel/60 mt-10">
+        <div className="max-w-6xl mx-auto px-5 py-6">
+          <DisclaimerFooter />
+        </div>
+      </footer>
     </div>
   );
 }
