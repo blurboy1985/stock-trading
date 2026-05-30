@@ -25,10 +25,25 @@ def _seed_watchlist() -> None:
             db.commit()
 
 
+def _sync_alpaca_watchlist() -> None:
+    """Best-effort mirror of the DB watchlist to the Alpaca account on boot, so
+    it's visible when you log in to the Alpaca site. Never blocks startup."""
+    if not settings.has_credentials:
+        return
+    try:
+        from . import alpaca_client as ac
+        from .services import recommender
+
+        ac.sync_watchlist(recommender.get_universe())
+    except Exception:  # noqa: BLE001 — visibility nicety, not load-bearing
+        pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     _seed_watchlist()
+    _sync_alpaca_watchlist()
     # Scheduler is started here in Phase 4.
     try:
         from .services.scheduler import start_scheduler, stop_scheduler

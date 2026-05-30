@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from .. import alpaca_client as ac
 from ..config import settings as env_settings
 from ..db import SessionLocal
 from ..models import WatchlistItem
@@ -54,6 +55,16 @@ def update_settings(update: SettingsUpdate):
     return {"settings": runtime_settings.set_many(payload)}
 
 
+def _mirror_to_alpaca() -> None:
+    """Best-effort: keep the Alpaca-side watchlist in sync (never blocks)."""
+    if not env_settings.has_credentials:
+        return
+    try:
+        ac.sync_watchlist(recommender.get_universe())
+    except Exception:  # noqa: BLE001 — visibility nicety, not load-bearing
+        pass
+
+
 @router.post("/watchlist/{symbol}")
 def add_symbol(symbol: str):
     symbol = symbol.upper().strip()
@@ -61,6 +72,7 @@ def add_symbol(symbol: str):
         if not db.scalar(select(WatchlistItem).where(WatchlistItem.symbol == symbol)):
             db.add(WatchlistItem(symbol=symbol))
             db.commit()
+    _mirror_to_alpaca()
     return {"watchlist": recommender.get_universe()}
 
 
@@ -73,4 +85,19 @@ def remove_symbol(symbol: str):
             raise HTTPException(status_code=404, detail="symbol not in watchlist")
         db.delete(row)
         db.commit()
+    _mirror_to_alpaca()
     return {"watchlist": recommender.get_universe()}
+
+
+@router.post("/watchlist/sync")
+def sync_watchlist():
+    """Push the current watchlist to a named Alpaca watchlist so it's visible
+    on the Alpaca site. Returns what was synced."""
+    if not env_settings.has_credentials:
+        raise HTTPException(status_code=503, detail="Alpaca credentials not configured.")
+    try:
+        return ac.sync_watchlist(recommender.get_universe())
+    except ac.AlpacaUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Watchlist sync failed: {e}")

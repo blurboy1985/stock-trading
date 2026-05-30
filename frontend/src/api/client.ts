@@ -239,6 +239,11 @@ export const api = {
     req<{ watchlist: string[] }>(`/api/settings/watchlist/${s}`, { method: "POST" }),
   removeSymbol: (s: string) =>
     req<{ watchlist: string[] }>(`/api/settings/watchlist/${s}`, { method: "DELETE" }),
+  syncWatchlist: () =>
+    req<{ name: string; symbols: string[]; action: string }>(
+      "/api/settings/watchlist/sync",
+      { method: "POST" },
+    ),
   runBacktest: (body: Record<string, unknown>) =>
     req<BacktestResult>("/api/backtest/run", { method: "POST", body: JSON.stringify(body) }),
   walkForward: (body: Record<string, unknown>) =>

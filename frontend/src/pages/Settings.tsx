@@ -30,6 +30,7 @@ export function Settings() {
     mutationFn: (s: string) => api.removeSymbol(s),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
   });
+  const syncWl = useMutation({ mutationFn: () => api.syncWatchlist() });
 
   if (settings.isLoading || !draft) return <Spinner />;
   const broker = settings.data!.broker;
@@ -279,7 +280,29 @@ export function Settings() {
           >
             Add
           </button>
+          <button
+            onClick={() => syncWl.mutate()}
+            disabled={syncWl.isPending || !broker.has_credentials}
+            className="ml-auto bg-accent/20 border border-accent/40 text-accent px-4 rounded-lg hover:bg-accent/30 text-sm disabled:opacity-40"
+            title="Push this watchlist to a 'StockSim' watchlist on your Alpaca account"
+          >
+            {syncWl.isPending ? "Syncing…" : "Sync to Alpaca"}
+          </button>
         </div>
+        {syncWl.isSuccess && (
+          <p className="text-buy text-xs mt-2">
+            Synced {syncWl.data.symbols.length} symbols to the “{syncWl.data.name}”
+            watchlist on Alpaca ({syncWl.data.action}) — view it on the Alpaca site.
+          </p>
+        )}
+        {syncWl.isError && (
+          <p className="text-sell text-xs mt-2">{(syncWl.error as Error).message}</p>
+        )}
+        <p className="text-[11px] text-slate-500 mt-2">
+          Watchlist changes auto-sync to Alpaca; orders, positions, and account
+          balances already live on your Alpaca paper account and appear when you
+          log in to the Alpaca site.
+        </p>
       </Panel>
     </div>
   );

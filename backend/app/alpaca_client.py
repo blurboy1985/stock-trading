@@ -136,6 +136,47 @@ def get_news(symbols: list[str], limit: int = 20) -> list[dict[str, Any]]:
     return out
 
 
+# ── Watchlists (mirrored to the Alpaca account for visibility) ──────────
+
+# Name of the Alpaca-side watchlist the app keeps in sync with its DB watchlist.
+APP_WATCHLIST_NAME = "StockSim"
+
+
+def list_watchlists() -> list[dict[str, Any]]:
+    """All watchlists on the Alpaca account."""
+    return [
+        {"id": str(w.id), "name": w.name}
+        for w in _trading_client().get_watchlists()
+    ]
+
+
+def sync_watchlist(
+    symbols: list[str], name: str = APP_WATCHLIST_NAME
+) -> dict[str, Any]:
+    """Mirror the app's watchlist to a named Alpaca watchlist so it shows up on
+    the Alpaca site. Creates the list on first run, updates it thereafter."""
+    from alpaca.trading.requests import (
+        CreateWatchlistRequest,
+        UpdateWatchlistRequest,
+    )
+
+    syms = [s.strip().upper() for s in symbols if s.strip()]
+    if not syms:
+        return {"name": name, "symbols": [], "action": "skipped (empty)"}
+
+    client = _trading_client()
+    existing = next((w for w in client.get_watchlists() if w.name == name), None)
+    if existing is None:
+        client.create_watchlist(CreateWatchlistRequest(name=name, symbols=syms))
+        action = "created"
+    else:
+        client.update_watchlist_by_id(
+            str(existing.id), UpdateWatchlistRequest(name=name, symbols=syms)
+        )
+        action = "updated"
+    return {"name": name, "symbols": syms, "action": action}
+
+
 # ── Account / trading ──────────────────────────────────────────────────
 
 
