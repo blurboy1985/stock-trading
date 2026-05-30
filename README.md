@@ -31,23 +31,24 @@ producing a normalized score in `[-1, +1]` plus a plain-English rationale:
 |---------------|-------------------------------------------------------------|
 | Technical     | RSI, MACD, SMA/EMA crossovers, ADX-confirmed trend          |
 | Volatility    | Donchian/Bollinger breakouts, ATR, volume spikes            |
-| Sentiment     | VADER scoring of recent Alpaca news headlines               |
-| Fundamentals  | yfinance P/E, revenue growth, margins (slow-moving tilt)    |
+| Momentum      | Cross-sectional 12-1 relative strength, ranked vs the universe |
+| Sentiment     | VADER + a finance lexicon (Loughran–McDonald) over recent news, recency-weighted and de-duped; optional Claude LLM backend |
+| Fundamentals  | yfinance multi-factor value/growth/quality/health, scored relative to the live sector median |
 
 `scoring.combine()` weights them (configurable in Settings) into a final
 composite that maps to **BUY / SELL / HOLD**. The backtester reuses the *exact
 same* signal functions, so backtested decisions match live decisions.
 
 **Safety** — every order passes `services/risk.py` (position-size cap, total
-exposure cap, buying-power check, stop-loss/take-profit bracket). Live trading
-is locked behind three independent gates:
-1. `LIVE_TRADING=true` in `.env`
-2. a non-paper Alpaca endpoint, and
-3. explicit per-order confirmation from the UI.
+exposure cap, buying-power check, stop-loss/take-profit bracket). The app runs
+**paper-only**: real-money orders would require all three of `LIVE_TRADING=true`
+in `.env`, a non-paper Alpaca endpoint, **and** an explicit per-order
+confirmation flag — and the UI never sends that flag, so every UI order is a
+paper order.
 
-Auto-trading (the scheduler acting on recommendations) is **structurally limited
-to paper** — it cannot supply the per-order live confirmation, so it can never
-place a real-money order.
+Auto-trading (the scheduler acting on recommendations) is likewise **structurally
+limited to paper** — it cannot supply the per-order live confirmation, so it can
+never place a real-money order.
 
 ---
 
@@ -82,16 +83,27 @@ Open <http://localhost:5173>. The Vite dev server proxies `/api` to the backend.
 
 ## Using it
 
-- **Dashboard** — account equity, today's P&L, open positions, top buy signals.
-- **Recommendations** — the watchlist ranked by composite score; expand any row
-  to see the per-signal breakdown and reasons. One-click paper buy.
-- **Ticker** (`/ticker/AAPL`) — candlestick chart, live quote, recent news, and a
-  risk-checked paper trade panel.
-- **Backtest** — pick symbols + date range + stop/target, run, and compare the
-  strategy's equity curve and metrics (Sharpe, max drawdown, win rate, profit
-  factor) against an equal-weight buy-and-hold benchmark.
-- **Settings** — broker/safety status, auto-trade toggle, signal weights, risk
-  limits, and watchlist management.
+📖 **For the full step-by-step daily workflow, read [GUIDE.md](GUIDE.md)** —
+setup, configuring, reading recommendations, placing risk-checked trades,
+backtesting/validation, a sensible daily routine, and the known limitations.
+
+The tabs at a glance:
+
+- **Dashboard** — account equity, today's P&L, market regime, open positions
+  (with one-click **Sell → Confirm** to close), open/working orders (with
+  **Cancel**), and top buy signals.
+- **Recommendations** — the watchlist ranked by a *risk-adjusted* score; expand
+  any row for the per-signal breakdown, reasons, agreement, and suggested size.
+  One-click paper buy.
+- **Research** — market-regime detail and a relative-strength leaderboard.
+- **Ticker** (`/ticker/AAPL`) — price chart, live quote, recent news, and a
+  risk-checked paper trade panel (also where you exit a position).
+- **Backtest** — symbols + date range + stop/target, run, and compare equity
+  curve and metrics (Sharpe, max drawdown, win rate, profit factor) against an
+  equal-weight buy-and-hold benchmark, with walk-forward + parameter-sweep
+  validation.
+- **Settings** — broker/safety status, auto-trade toggle, signal weights,
+  sentiment/fundamentals tuning, quant controls, risk limits, and watchlist.
 
 ### Backtesting honesty
 Backtests use **technical + volatility only**. Point-in-time historical news and
@@ -103,13 +115,15 @@ conservatively.
 
 ---
 
-## Going live (when you're ready, and at your own risk)
-1. Confirm a strategy's edge across out-of-sample backtests **and** weeks of paper
-   trading.
-2. In `.env`: set `ALPACA_BASE_URL=https://api.alpaca.markets` and
-   `LIVE_TRADING=true`, and use your **live** API keys.
-3. Restart the backend. The header badge turns red (`● LIVE`) and each order now
-   requires explicit confirmation.
+## Paper-only by design
+This app is a **paper-trading simulator** on the Alpaca API — it places paper
+orders only. The header stays **● PAPER**, auto-trading is structurally
+paper-only, and the live-trading kill switch (`LIVE_TRADING` + non-paper endpoint
++ per-order confirmation) remains in the code but the UI does not surface a
+real-money order path. No real capital is at risk. Pursuing live trading would be
+a separate, deliberate step — and only after a strategy has shown an
+out-of-sample edge **and** weeks of profitable paper trading. See
+[GUIDE.md](GUIDE.md).
 
 ---
 

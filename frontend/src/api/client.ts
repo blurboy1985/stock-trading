@@ -218,6 +218,8 @@ export const api = {
   portfolio: () => req<PortfolioResponse>("/api/portfolio"),
   orders: (status = "all") =>
     req<{ orders: any[] }>(`/api/portfolio/orders?status=${status}`),
+  cancelOrder: (id: string) =>
+    req<{ cancelled: string }>(`/api/portfolio/order/${id}`, { method: "DELETE" }),
   placeOrder: (body: {
     symbol: string;
     side: string;
