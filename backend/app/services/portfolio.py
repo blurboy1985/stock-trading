@@ -117,3 +117,46 @@ def place_order(
         "take_profit": decision.take_profit,
         "is_paper": settings.is_paper,
     }
+
+
+def close_position(
+    symbol: str, source: str = "manual", confirm_live: bool = False
+) -> dict[str, Any]:
+    """Flatten a held position at market (cancels its open bracket first).
+
+    Goes through the same live-trading gate as ``place_order`` — paper always
+    passes; real-money liquidation still needs the full live authorization.
+    """
+    symbol = symbol.upper()
+    snap = snapshot()
+    if not snap["configured"]:
+        raise OrderRejected("Alpaca credentials not configured.")
+
+    held = next((p for p in snap["positions"] if p["symbol"] == symbol), None)
+    if not held or float(held["qty"]) <= 0:
+        raise OrderRejected(f"no open position in {symbol}")
+
+    if not _live_gate(confirm_live):
+        raise OrderRejected(
+            "Live trading is not authorized. Real-money orders require "
+            "LIVE_TRADING=true, a live endpoint, and explicit confirmation."
+        )
+
+    result = ac.close_position(symbol)
+
+    with SessionLocal() as db:
+        db.add(
+            OrderRecord(
+                alpaca_order_id=result.get("alpaca_order_id"),
+                symbol=symbol,
+                side="sell",
+                qty=float(held["qty"]),
+                order_type="market",
+                status=result.get("status", "new"),
+                is_paper=settings.is_paper,
+                source=source,
+            )
+        )
+        db.commit()
+
+    return {"submitted": True, "order": result, "is_paper": settings.is_paper}

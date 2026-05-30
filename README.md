@@ -90,8 +90,8 @@ backtesting/validation, a sensible daily routine, and the known limitations.
 The tabs at a glance:
 
 - **Dashboard** — account equity, today's P&L, market regime, open positions
-  (with one-click **Sell → Confirm** to close), open/working orders (with
-  **Cancel**), and top buy signals.
+  (one-click **Sell → Confirm** closes a position and cancels its bracket first),
+  open/working orders (with **Cancel**), and top buy signals.
 - **Recommendations** — the watchlist ranked by a *risk-adjusted* score; expand
   any row for the per-signal breakdown, reasons, agreement, and suggested size.
   One-click paper buy.
@@ -102,6 +102,8 @@ The tabs at a glance:
   curve and metrics (Sharpe, max drawdown, win rate, profit factor) against an
   equal-weight buy-and-hold benchmark, with walk-forward + parameter-sweep
   validation.
+- **History** — account P&L and equity curve over time (Alpaca-computed) plus a
+  filled-order trade log.
 - **Settings** — broker/safety status, auto-trade toggle, signal weights,
   sentiment/fundamentals tuning, quant controls, risk limits, and watchlist.
 

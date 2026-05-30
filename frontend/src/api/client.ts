@@ -73,6 +73,20 @@ export interface PortfolioResponse {
   positions: Position[];
 }
 
+export interface PortfolioHistory {
+  period: string;
+  timeframe: string;
+  base_value: number | null;
+  total_pl: number | null;
+  total_pl_pct: number | null;
+  points: {
+    time: string;
+    equity: number;
+    profit_loss: number | null;
+    profit_loss_pct: number | null;
+  }[];
+}
+
 export interface Bar {
   time: string;
   open: number;
@@ -220,6 +234,10 @@ export const api = {
     req<{ orders: any[] }>(`/api/portfolio/orders?status=${status}`),
   cancelOrder: (id: string) =>
     req<{ cancelled: string }>(`/api/portfolio/order/${id}`, { method: "DELETE" }),
+  closePosition: (symbol: string) =>
+    req<any>(`/api/portfolio/position/${symbol}/close`, { method: "POST" }),
+  portfolioHistory: (period = "1M") =>
+    req<PortfolioHistory>(`/api/portfolio/history?period=${period}`),
   placeOrder: (body: {
     symbol: string;
     side: string;

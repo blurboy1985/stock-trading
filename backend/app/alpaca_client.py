@@ -268,6 +268,81 @@ def cancel_order(order_id: str) -> None:
     _trading_client().cancel_order_by_id(order_id)
 
 
+def close_position(symbol: str) -> dict[str, Any]:
+    """Liquidate a position at market, cancelling any open orders on the symbol
+    first so shares reserved by a bracket (OCO) don't block the close.
+
+    Returns the closing order in the same shape as :func:`submit_order`.
+    """
+    from alpaca.trading.enums import QueryOrderStatus
+    from alpaca.trading.requests import GetOrdersRequest
+
+    client = _trading_client()
+    symbol = symbol.upper()
+
+    # Free shares held by open orders (e.g. the stop/target legs of a bracket).
+    try:
+        opens = client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=200))
+        for o in opens:
+            if o.symbol == symbol:
+                try:
+                    client.cancel_order_by_id(o.id)
+                except Exception:  # noqa: BLE001 — best-effort; close still attempts
+                    pass
+    except Exception:  # noqa: BLE001
+        pass
+
+    o = client.close_position(symbol)
+    submitted = getattr(o, "submitted_at", None)
+    return {
+        "alpaca_order_id": str(getattr(o, "id", "")),
+        "symbol": getattr(o, "symbol", symbol),
+        "qty": float(getattr(o, "qty", 0) or 0),
+        "side": str(getattr(o, "side", "sell")),
+        "status": str(getattr(o, "status", "accepted")),
+        "submitted_at": submitted.isoformat() if submitted else None,
+    }
+
+
+def get_portfolio_history(period: str = "1M", timeframe: str = "1D") -> dict[str, Any]:
+    """Account equity / P&L over time (Alpaca-computed), for the History view."""
+    from alpaca.trading.requests import GetPortfolioHistoryRequest
+
+    ph = _trading_client().get_portfolio_history(
+        GetPortfolioHistoryRequest(period=period, timeframe=timeframe)
+    )
+    ts = ph.timestamp or []
+    eq = ph.equity or []
+    pl = ph.profit_loss or []
+    plpct = ph.profit_loss_pct or []
+
+    points: list[dict[str, Any]] = []
+    for i, t in enumerate(ts):
+        equity = eq[i] if i < len(eq) else None
+        if equity is None:
+            continue  # Alpaca pads non-trading buckets with nulls
+        points.append(
+            {
+                "time": dt.datetime.fromtimestamp(t, tz=dt.timezone.utc).isoformat(),
+                "equity": float(equity),
+                "profit_loss": float(pl[i]) if i < len(pl) and pl[i] is not None else None,
+                "profit_loss_pct": float(plpct[i]) if i < len(plpct) and plpct[i] is not None else None,
+            }
+        )
+
+    base = float(ph.base_value) if ph.base_value is not None else None
+    last_eq = points[-1]["equity"] if points else None
+    total_pl = (last_eq - base) if (base is not None and last_eq is not None) else None
+    return {
+        "period": period,
+        "timeframe": timeframe,
+        "base_value": base,
+        "points": points,
+        "total_pl": total_pl,
+        "total_pl_pct": (total_pl / base) if (total_pl is not None and base) else None,
+    }
+
+
 def list_orders(status: str = "all", limit: int = 50) -> list[dict[str, Any]]:
     from alpaca.trading.enums import QueryOrderStatus
     from alpaca.trading.requests import GetOrdersRequest

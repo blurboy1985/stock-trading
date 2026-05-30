@@ -33,8 +33,7 @@ export function Dashboard() {
   };
 
   const sell = useMutation({
-    mutationFn: (v: { symbol: string; qty: number }) =>
-      api.placeOrder({ symbol: v.symbol, side: "sell", qty: v.qty }),
+    mutationFn: (v: { symbol: string }) => api.closePosition(v.symbol),
     onSuccess: () => {
       setConfirmSell(null);
       refreshBook();
@@ -123,7 +122,7 @@ export function Dashboard() {
                         <button
                           onClick={() =>
                             armed
-                              ? sell.mutate({ symbol: pos.symbol, qty: pos.qty })
+                              ? sell.mutate({ symbol: pos.symbol })
                               : setConfirmSell(pos.symbol)
                           }
                           onBlur={() => armed && setConfirmSell(null)}

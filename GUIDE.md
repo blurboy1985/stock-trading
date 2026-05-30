@@ -143,7 +143,9 @@ equity (max 10%)").
   paper market buy.
 - **Exact size:** use the **Ticker** trade panel and type a quantity.
 - **Exit:** **Sell → Confirm** on a Dashboard position row closes the whole
-  position; or use the **Sell** button on the Ticker panel for a partial exit.
+  position at market — it **cancels the position's open bracket (stop/target)
+  first**, so the close won't be blocked by shares reserved for those orders. Use
+  the **Sell** button on the Ticker panel for a partial exit instead.
 
 > **Broker's note — a sizing gotcha to know:** the one-click **Buy** auto-sizes
 > to your **max-position cap**, *not* the smaller volatility-targeted "suggested
@@ -244,6 +246,16 @@ not the underlying daily signals.
 
 ---
 
+## 9. Track results over time (History tab)
+
+The **History** tab reads your Alpaca account's performance: a **P&L summary and
+equity curve** over a selectable window (1M / 3M / 1Y, Alpaca-computed realized +
+unrealized), plus a **trade history** table of your filled orders. It's the
+account-level scoreboard for how your paper trading is actually doing — the same
+numbers you'd see on the Alpaca site.
+
+---
+
 ## Paper-only by design
 
 **This app is a paper-trading simulator on the Alpaca API** — by design it places
@@ -262,7 +274,6 @@ weeks of profitable paper trading.
 | Area | Limitation |
 |------|------------|
 | **One-click sizing** | Recommendations "Buy" sizes to the max-position cap, not the displayed vol-targeted suggested qty — use the Ticker qty field to match the suggestion. |
-| **Realized P&L / trade journal** | Not surfaced in the UI; orders are persisted in the DB and recommendation history is available via the API. |
 | **Horizon** | Daily-bar swing/position trading — not intraday. |
 | **Backtest scope** | Sentiment & fundamentals excluded (look-ahead honesty); survivorship & IEX coverage caveats apply. |
 

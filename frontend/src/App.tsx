@@ -6,6 +6,7 @@ import { Recommendations } from "./pages/Recommendations";
 import { Ticker } from "./pages/Ticker";
 import { Backtest } from "./pages/Backtest";
 import { Research } from "./pages/Research";
+import { History } from "./pages/History";
 import { Settings } from "./pages/Settings";
 
 const tabs = [
@@ -13,6 +14,7 @@ const tabs = [
   { to: "/recommendations", label: "Recommendations" },
   { to: "/research", label: "Research" },
   { to: "/backtest", label: "Backtest" },
+  { to: "/history", label: "History" },
   { to: "/settings", label: "Settings" },
 ];
 
@@ -64,6 +66,7 @@ export default function App() {
           <Route path="/research" element={<Research />} />
           <Route path="/ticker/:symbol" element={<Ticker />} />
           <Route path="/backtest" element={<Backtest />} />
+          <Route path="/history" element={<History />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
