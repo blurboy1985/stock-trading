@@ -167,6 +167,23 @@ def get_most_actives(top: int = 100, by: str = "volume") -> list[str]:
         return []
 
 
+@lru_cache(maxsize=2048)
+def get_asset(symbol: str) -> dict[str, Any]:
+    """Asset metadata (company name, exchange, tradability) for a symbol.
+
+    Cached for the process lifetime — names/exchange are effectively static, so
+    repeated Ticker views don't re-hit Alpaca.
+    """
+    a = _trading_client().get_asset(symbol.upper())
+    return {
+        "symbol": a.symbol,
+        "name": getattr(a, "name", "") or "",
+        "exchange": str(getattr(a, "exchange", "") or ""),
+        "tradable": bool(getattr(a, "tradable", False)),
+        "fractionable": bool(getattr(a, "fractionable", False)),
+    }
+
+
 def get_latest_quote(symbol: str) -> dict[str, Any]:
     """Latest bid/ask/mid for a symbol."""
     from alpaca.data.requests import StockLatestQuoteRequest

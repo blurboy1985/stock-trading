@@ -50,6 +50,17 @@ def market_regime():
     return {"configured": True, "regime": regime_mod.market_regime(df)}
 
 
+@router.get("/asset/{symbol}")
+def asset(symbol: str):
+    """Company name / exchange / tradability for a symbol."""
+    try:
+        return ac.get_asset(symbol.upper())
+    except ac.AlpacaUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:  # noqa: BLE001 — surface SDK errors as 502
+        raise HTTPException(status_code=502, detail=f"Asset fetch failed: {e}")
+
+
 @router.get("/quote/{symbol}")
 def quote(symbol: str):
     try:
@@ -63,7 +74,7 @@ def quote(symbol: str):
 @router.get("/bars/{symbol}")
 def bars(
     symbol: str,
-    days: int = Query(180, ge=1, le=2000),
+    days: int = Query(180, ge=1, le=8000),
     timeframe: str = Query("1Day"),
 ):
     """OHLCV bars for the last ``days`` calendar days, charting-ready."""

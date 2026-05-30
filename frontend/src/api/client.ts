@@ -252,6 +252,14 @@ export const api = {
   bars: (symbol: string, days = 180) =>
     req<{ symbol: string; bars: Bar[] }>(`/api/market/bars/${symbol}?days=${days}`),
   quote: (symbol: string) => req<any>(`/api/market/quote/${symbol}`),
+  asset: (symbol: string) =>
+    req<{
+      symbol: string;
+      name: string;
+      exchange: string;
+      tradable: boolean;
+      fractionable: boolean;
+    }>(`/api/market/asset/${symbol}`),
   news: (symbols: string) => req<{ news: any[] }>(`/api/market/news?symbols=${symbols}`),
   settings: () => req<AppSettings>("/api/settings"),
   updateSettings: (body: Record<string, unknown>) =>
