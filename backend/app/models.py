@@ -40,6 +40,10 @@ class Recommendation(Base):
     action: Mapped[str] = mapped_column(String(8))  # BUY / SELL / HOLD
     score: Mapped[float] = mapped_column(Float)  # composite, [-1, 1]
     price: Mapped[float] = mapped_column(Float)
+    # Risk-aware extras (nullable for backward compatibility).
+    conviction: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rank_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    regime: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Per-signal sub-scores and human-readable reasons.
     breakdown: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     reasons: Mapped[list[str]] = mapped_column(JSON, default=list)

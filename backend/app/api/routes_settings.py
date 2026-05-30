@@ -22,6 +22,12 @@ class SettingsUpdate(BaseModel):
     auto_trade: bool | None = None
     buy_threshold: float | None = None
     sell_threshold: float | None = None
+    regime_filter: bool | None = None
+    benchmark_symbol: str | None = None
+    use_vol_sizing: bool | None = None
+    target_risk_pct: float | None = None
+    min_dollar_volume: float | None = None
+    min_price: float | None = None
 
 
 @router.get("")

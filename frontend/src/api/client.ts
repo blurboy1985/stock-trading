@@ -12,13 +12,32 @@ export interface Recommendation {
   action: "BUY" | "SELL" | "HOLD";
   score: number;
   confidence: number;
+  conviction?: number;
+  agreement?: number;
+  rank_score?: number;
+  regime_score?: number | null;
+  regime_multiplier?: number;
+  regime_label?: string;
+  atr_pct?: number | null;
+  suggested_qty?: number | null;
+  suggested_weight_pct?: number;
+  liquidity_warning?: string;
   price?: number;
   reasons: string[];
   breakdown: Record<string, SignalBreakdown>;
 }
 
+export interface Regime {
+  label: "risk_on" | "neutral" | "risk_off";
+  score: number;
+  multiplier: number;
+  reasons: string[];
+  metrics: Record<string, number | string | boolean | null>;
+}
+
 export interface RecoResponse {
   generated_at: string | null;
+  regime?: Regime | null;
   recommendations: Recommendation[];
   top_buys: Recommendation[];
   top_sells: Recommendation[];
@@ -78,15 +97,54 @@ export interface BacktestMetrics {
   avg_loss: number;
   benchmark_return?: number;
   alpha_vs_benchmark?: number;
+  exposure_pct?: number;
+  turnover?: number;
+  avg_holding_period?: number;
+  attribution?: Record<string, number>;
+  by_exit_reason?: Record<string, { count: number; pnl: number }>;
+}
+
+export interface CorrelationMatrix {
+  symbols: string[];
+  matrix: (number | null)[][];
 }
 
 export interface BacktestResult {
   run_id?: number;
   metrics: BacktestMetrics;
-  equity_curve: { date: string; equity: number }[];
+  equity_curve: { date: string; equity: number; invested_pct?: number }[];
   benchmark_curve: { date: string; equity: number }[];
   trades: Trade[];
   symbols: string[];
+  correlation?: CorrelationMatrix;
+}
+
+export interface WalkForwardFold {
+  fold: number;
+  chosen_threshold: number;
+  test_metrics: BacktestMetrics;
+}
+
+export interface WalkForwardResult {
+  folds: WalkForwardFold[];
+  oos_metrics: BacktestMetrics;
+  oos_equity_curve: { date: string; equity: number }[];
+  oos_trades: Trade[];
+}
+
+export interface SweepCell {
+  threshold: number;
+  tilt: number;
+  sharpe: number | null;
+  total_return: number | null;
+  max_drawdown: number | null;
+  num_trades: number | null;
+}
+
+export interface SweepResult {
+  thresholds: number[];
+  tilts: number[];
+  cells: SweepCell[];
 }
 
 export interface Trade {
@@ -99,6 +157,8 @@ export interface Trade {
   pnl: number;
   return_pct: number;
   exit_reason: string;
+  driver?: string;
+  bars_held?: number;
 }
 
 export interface AppSettings {
@@ -111,6 +171,12 @@ export interface AppSettings {
     auto_trade: boolean;
     buy_threshold: number;
     sell_threshold: number;
+    regime_filter?: boolean;
+    benchmark_symbol?: string;
+    use_vol_sizing?: boolean;
+    target_risk_pct?: number;
+    min_dollar_volume?: number;
+    min_price?: number;
   };
   watchlist: string[];
   broker: {
@@ -169,5 +235,13 @@ export const api = {
     req<{ watchlist: string[] }>(`/api/settings/watchlist/${s}`, { method: "DELETE" }),
   runBacktest: (body: Record<string, unknown>) =>
     req<BacktestResult>("/api/backtest/run", { method: "POST", body: JSON.stringify(body) }),
+  walkForward: (body: Record<string, unknown>) =>
+    req<WalkForwardResult>("/api/backtest/walkforward", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  sweep: (body: Record<string, unknown>) =>
+    req<SweepResult>("/api/backtest/sweep", { method: "POST", body: JSON.stringify(body) }),
   backtestRuns: () => req<{ runs: any[] }>("/api/backtest/runs"),
+  regime: () => req<{ configured: boolean; regime: Regime | null }>("/api/market/regime"),
 };

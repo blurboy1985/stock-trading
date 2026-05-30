@@ -30,6 +30,51 @@ def size_position(equity: float, price: float, max_position_pct: float) -> int:
     return int(budget // price)
 
 
+# Floor on ATR% so a near-zero vol reading can't blow up the target-vol weight.
+_ATR_FLOOR = 0.005
+
+
+def target_weight(
+    atr_pct: float | None,
+    conviction: float,
+    *,
+    target_risk_pct: float,
+    max_position_pct: float,
+) -> float:
+    """Volatility-targeted, conviction-scaled portfolio weight for a long.
+
+    Lower-volatility names earn a larger weight (up to ``max_position_pct``) so
+    each position contributes a comparable amount of risk; the weight is then
+    scaled by conviction (with a floor so a valid BUY is never dust).
+    """
+    if atr_pct and atr_pct > 0:
+        raw = target_risk_pct / max(atr_pct, _ATR_FLOOR)
+    else:
+        raw = max_position_pct  # unknown vol -> fall back to the cap
+    weight = min(raw, max_position_pct)
+    conv_factor = 0.4 + 0.6 * max(0.0, min(1.0, conviction))
+    return weight * conv_factor
+
+
+def size_position_vol_target(
+    equity: float,
+    price: float,
+    atr_pct: float | None,
+    conviction: float,
+    *,
+    target_risk_pct: float,
+    max_position_pct: float,
+) -> int:
+    """Whole-share quantity from :func:`target_weight` (caps still apply later)."""
+    if price <= 0:
+        return 0
+    weight = target_weight(
+        atr_pct, conviction,
+        target_risk_pct=target_risk_pct, max_position_pct=max_position_pct,
+    )
+    return int((equity * weight) // price)
+
+
 def compute_bracket(
     price: float, side: str, stop_loss_pct: float, take_profit_pct: float
 ) -> tuple[float | None, float | None]:

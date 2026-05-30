@@ -23,7 +23,9 @@ log = logging.getLogger("scheduler")
 _scheduler: BackgroundScheduler | None = None
 
 # Latest cycle output, served to clients without recomputing.
-LATEST: dict[str, Any] = {"recommendations": [], "generated_at": None, "auto_actions": []}
+LATEST: dict[str, Any] = {
+    "recommendations": [], "generated_at": None, "auto_actions": [], "regime": None,
+}
 
 REFRESH_MINUTES = 15
 
@@ -53,6 +55,7 @@ def run_cycle(force: bool = False) -> dict[str, Any]:
         top_buys=reco.get("top_buys", []),
         top_sells=reco.get("top_sells", []),
         generated_at=reco.get("generated_at"),
+        regime=reco.get("regime"),
         auto_actions=actions,
     )
     return {"recommendations": len(reco.get("recommendations", [])), "auto_actions": actions}

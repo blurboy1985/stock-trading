@@ -25,6 +25,13 @@ DEFAULTS: dict[str, Any] = {
     "auto_trade": False,  # scheduler auto-executes recommendations when true
     "buy_threshold": 0.25,
     "sell_threshold": -0.25,
+    # ── Quant controls ────────────────────────────────────────────────
+    "regime_filter": True,           # dampen longs in a risk-off market
+    "benchmark_symbol": "SPY",       # broad-market proxy for regime + RS
+    "use_vol_sizing": True,          # volatility-targeted, conviction-scaled sizing
+    "target_risk_pct": 0.0025,       # target daily risk per position (ATR-based)
+    "min_dollar_volume": 5_000_000,  # liquidity floor: median $-volume/day
+    "min_price": 5.0,                # price floor (skip sub-$5 names)
 }
 
 

@@ -58,6 +58,19 @@ def compute_metrics(
         float("inf") if gross_win > 0 else 0.0
     )
 
+    # Avg holding period (bars) and profit-factor grouped by exit reason.
+    held = [t["bars_held"] for t in closed if t.get("bars_held") is not None]
+    avg_holding = sum(held) / len(held) if held else 0.0
+    by_exit: dict[str, dict[str, float]] = {}
+    for t in closed:
+        reason = t.get("exit_reason", "—")
+        slot = by_exit.setdefault(reason, {"count": 0, "pnl": 0.0})
+        slot["count"] += 1
+        slot["pnl"] += t["pnl"]
+    pf_by_exit = {
+        r: {"count": v["count"], "pnl": round(v["pnl"], 2)} for r, v in by_exit.items()
+    }
+
     out = {
         "starting_cash": round(starting_cash, 2),
         "final_equity": round(final, 2),
@@ -73,6 +86,8 @@ def compute_metrics(
         ),
         "avg_win": round(gross_win / len(wins), 2) if wins else 0.0,
         "avg_loss": round(-gross_loss / len(losses), 2) if losses else 0.0,
+        "avg_holding_period": round(avg_holding, 1),
+        "by_exit_reason": pf_by_exit,
     }
 
     if benchmark_curve and len(benchmark_curve) >= 2:
