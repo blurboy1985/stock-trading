@@ -42,7 +42,28 @@ export interface RecoResponse {
   recommendations: Recommendation[];
   top_buys: Recommendation[];
   top_sells: Recommendation[];
-  auto_actions: { symbol: string; side: string; status: string; reason?: string }[];
+}
+
+export interface Proposal {
+  id: number;
+  created_at: string | null;
+  decided_at: string | null;
+  symbol: string;
+  side: "buy" | "sell";
+  qty: number;
+  price: number;
+  est_cost: number;
+  equity_pct?: number | null;
+  conviction?: number | null;
+  atr_pct?: number | null;
+  rationale: string;
+  reasons: string[];
+  regime?: string | null;
+  blocked_reason?: string | null;
+  status: "pending" | "executed" | "rejected" | "failed" | "expired";
+  result?: string | null;
+  source: string;
+  is_paper: boolean;
 }
 
 export interface Position {
@@ -231,6 +252,19 @@ export const api = {
   recoHistory: (symbol?: string) =>
     req<{ history: any[] }>(
       `/api/recommendations/history${symbol ? `?symbol=${symbol}` : ""}`,
+    ),
+  proposals: (status = "pending") =>
+    req<{ proposals: Proposal[] }>(`/api/proposals?status=${status}`),
+  confirmProposal: (id: number) =>
+    req<{ proposal: Proposal; order?: any }>(`/api/proposals/${id}/confirm`, {
+      method: "POST",
+    }),
+  rejectProposal: (id: number) =>
+    req<{ proposal: Proposal }>(`/api/proposals/${id}/reject`, { method: "POST" }),
+  confirmAllProposals: () =>
+    req<{ results: { proposal_id: number; symbol: string; side: string; ok: boolean; order?: any; error?: string }[] }>(
+      "/api/proposals/confirm-all",
+      { method: "POST" },
     ),
   portfolio: () => req<PortfolioResponse>("/api/portfolio"),
   orders: (status = "all") =>

@@ -20,7 +20,6 @@ def get_recommendations(refresh: bool = Query(False)):
         "recommendations": LATEST.get("recommendations", []),
         "top_buys": LATEST.get("top_buys", []),
         "top_sells": LATEST.get("top_sells", []),
-        "auto_actions": LATEST.get("auto_actions", []),
     }
 
 

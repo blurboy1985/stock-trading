@@ -70,6 +70,42 @@ class OrderRecord(Base):
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class TradeProposal(Base):
+    """A pending auto-trade awaiting human confirmation.
+
+    When ``auto_trade`` is on, the scheduler *proposes* trades each cycle instead
+    of placing them; the user confirms or rejects each one. This table is the
+    audit trail of every proposal and its outcome.
+    """
+
+    __tablename__ = "trade_proposals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, default=_utcnow, index=True
+    )
+    decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    symbol: Mapped[str] = mapped_column(String(16), index=True)
+    side: Mapped[str] = mapped_column(String(8))  # buy / sell
+    qty: Mapped[float] = mapped_column(Float)
+    price: Mapped[float] = mapped_column(Float)  # reference price at proposal time
+    est_cost: Mapped[float] = mapped_column(Float, default=0.0)  # qty * price
+    equity_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    conviction: Mapped[float | None] = mapped_column(Float, nullable=True)
+    atr_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rationale: Mapped[str] = mapped_column(Text, default="")  # human-readable why
+    reasons_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    regime: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Set when the pre-trade dry-run risk check fails — confirm is then blocked.
+    blocked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # pending / executed / rejected / failed / expired
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    # Alpaca order id on success, or the error message on failure.
+    result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(16), default="auto")
+    is_paper: Mapped[bool] = mapped_column(default=True)
+
+
 class SignalSnapshot(Base):
     """Raw signal values captured each scheduler tick (for auditing/charts)."""
 

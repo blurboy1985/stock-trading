@@ -22,7 +22,7 @@ DEFAULTS: dict[str, Any] = {
     "max_total_exposure_pct": env_settings.max_total_exposure_pct,
     "stop_loss_pct": env_settings.stop_loss_pct,
     "take_profit_pct": env_settings.take_profit_pct,
-    "auto_trade": False,  # scheduler auto-executes recommendations when true
+    "auto_trade": False,  # scheduler auto-proposes trades (user confirms) when true
     "buy_threshold": 0.25,
     "sell_threshold": -0.25,
     # ── Quant controls ────────────────────────────────────────────────

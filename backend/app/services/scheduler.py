@@ -1,10 +1,10 @@
-"""Background scheduler: periodic recommendation refresh + position monitoring.
+"""Background scheduler: periodic recommendation refresh + auto-trade proposals.
 
 During market hours it regenerates recommendations every few minutes and, when
-``auto_trade`` is enabled, acts on them. Auto-trading can only ever place *paper*
-orders: live orders require an explicit per-order human confirmation that the
-scheduler cannot provide (see ``portfolio._live_gate``), so automation is
-fail-safe by construction.
+``auto_trade`` is enabled, *proposes* entries/exits (it never places orders
+itself). The user confirms each proposal in the UI, and only that explicit
+confirm reaches the broker — always paper (see ``portfolio._live_gate``), so
+automation is fail-safe by construction.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from .. import alpaca_client as ac
 from ..config import settings
-from . import portfolio, recommender, runtime_settings
+from . import proposals, recommender, runtime_settings
 
 log = logging.getLogger("scheduler")
 
@@ -24,7 +24,7 @@ _scheduler: BackgroundScheduler | None = None
 
 # Latest cycle output, served to clients without recomputing.
 LATEST: dict[str, Any] = {
-    "recommendations": [], "generated_at": None, "auto_actions": [], "regime": None,
+    "recommendations": [], "generated_at": None, "regime": None,
 }
 
 REFRESH_MINUTES = 15
@@ -38,17 +38,19 @@ def _market_open() -> bool:
 
 
 def run_cycle(force: bool = False) -> dict[str, Any]:
-    """One full pass: refresh recommendations and optionally auto-trade."""
+    """One full pass: refresh recommendations and (if on) propose auto-trades."""
     if not settings.has_credentials:
         return {"skipped": "no credentials"}
     if not force and not _market_open():
         return {"skipped": "market closed"}
 
     reco = recommender.generate(persist=True)
-    actions: list[dict[str, Any]] = []
+    proposed: list[dict[str, Any]] = []
 
     if runtime_settings.get("auto_trade") and reco.get("configured"):
-        actions = _auto_trade(reco)
+        # Supersede last cycle's untouched proposals, then propose fresh ones.
+        proposals.expire_stale()
+        proposed = proposals.build_from_reco(reco)
 
     LATEST.update(
         recommendations=reco.get("recommendations", []),
@@ -56,41 +58,11 @@ def run_cycle(force: bool = False) -> dict[str, Any]:
         top_sells=reco.get("top_sells", []),
         generated_at=reco.get("generated_at"),
         regime=reco.get("regime"),
-        auto_actions=actions,
     )
-    return {"recommendations": len(reco.get("recommendations", [])), "auto_actions": actions}
-
-
-def _auto_trade(reco: dict[str, Any]) -> list[dict[str, Any]]:
-    """Buy top-ranked BUYs we don't hold; sell holdings that flipped to SELL."""
-    actions: list[dict[str, Any]] = []
-    snap = portfolio.snapshot()
-    if not snap["configured"]:
-        return actions
-    held = {p["symbol"] for p in snap["positions"]}
-
-    # Exits: any held symbol now rated SELL.
-    sell_syms = {d["symbol"] for d in reco.get("recommendations", []) if d["action"] == "SELL"}
-    for p in snap["positions"]:
-        if p["symbol"] in sell_syms and p["qty"] > 0:
-            actions.append(_try(p["symbol"], "sell", p["qty"]))
-
-    # Entries: top BUYs we don't already hold (risk caps decide how many fill).
-    for d in reco.get("top_buys", []):
-        if d["symbol"] not in held:
-            actions.append(_try(d["symbol"], "buy", None))
-
-    return actions
-
-
-def _try(symbol: str, side: str, qty: float | None) -> dict[str, Any]:
-    try:
-        res = portfolio.place_order(symbol, side, qty=qty, source="auto")
-        return {"symbol": symbol, "side": side, "status": "submitted", "detail": res["order"]}
-    except portfolio.OrderRejected as e:
-        return {"symbol": symbol, "side": side, "status": "rejected", "reason": str(e)}
-    except Exception as e:  # noqa: BLE001
-        return {"symbol": symbol, "side": side, "status": "error", "reason": str(e)}
+    return {
+        "recommendations": len(reco.get("recommendations", [])),
+        "proposals": len(proposed),
+    }
 
 
 def start_scheduler() -> None:

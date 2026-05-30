@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "./api/client";
 import { Dashboard } from "./pages/Dashboard";
 import { Recommendations } from "./pages/Recommendations";
+import { Automation } from "./pages/Automation";
 import { Ticker } from "./pages/Ticker";
 import { Backtest } from "./pages/Backtest";
 import { Research } from "./pages/Research";
@@ -14,6 +15,7 @@ import { TradeWalkthrough, openTradeGuide } from "./components/TradeWalkthrough"
 const tabs = [
   { to: "/", label: "Dashboard", end: true },
   { to: "/recommendations", label: "Recommendations" },
+  { to: "/automation", label: "Automation" },
   { to: "/research", label: "Research" },
   { to: "/backtest", label: "Backtest" },
   { to: "/history", label: "History" },
@@ -23,6 +25,12 @@ const tabs = [
 export default function App() {
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const broker = settings.data?.broker;
+  const proposals = useQuery({
+    queryKey: ["proposals"],
+    queryFn: () => api.proposals("pending"),
+    refetchInterval: 30_000,
+  });
+  const pendingCount = proposals.data?.proposals.length ?? 0;
 
   return (
     <div className="min-h-full flex flex-col">
@@ -46,6 +54,11 @@ export default function App() {
                 }
               >
                 {t.label}
+                {t.to === "/automation" && pendingCount > 0 && (
+                  <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-accent/20 text-accent">
+                    {pendingCount}
+                  </span>
+                )}
               </NavLink>
             ))}
           </nav>
@@ -75,6 +88,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/recommendations" element={<Recommendations />} />
+          <Route path="/automation" element={<Automation />} />
           <Route path="/research" element={<Research />} />
           <Route path="/ticker/:symbol" element={<Ticker />} />
           <Route path="/backtest" element={<Backtest />} />

@@ -73,8 +73,12 @@ export function Settings() {
             className="w-4 h-4 accent-blue-500"
           />
           <span className="text-sm">
-            Auto-trade recommendations during market hours
-            <span className="text-slate-500"> (paper only; never places live orders)</span>
+            Auto-propose trades during market hours
+            <span className="text-slate-500">
+              {" "}
+              — you confirm each one before any order is placed (paper only). Review
+              proposals on the Automation tab.
+            </span>
           </span>
         </label>
       </Panel>

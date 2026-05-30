@@ -88,7 +88,7 @@ app.include_router(routes_market.router)
 
 # Routers added in later phases; import defensively so the app boots
 # even while those modules are still being built.
-for _mod in ("routes_reco", "routes_portfolio", "routes_backtest", "routes_settings"):
+for _mod in ("routes_reco", "routes_proposals", "routes_portfolio", "routes_backtest", "routes_settings"):
     try:
         module = __import__(f"app.api.{_mod}", fromlist=["router"])
         app.include_router(module.router)
