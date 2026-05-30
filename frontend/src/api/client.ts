@@ -23,6 +23,7 @@ export interface Recommendation {
   suggested_weight_pct?: number;
   liquidity_warning?: string;
   price?: number;
+  in_watchlist?: boolean;
   reasons: string[];
   breakdown: Record<string, SignalBreakdown>;
 }
@@ -187,6 +188,8 @@ export interface AppSettings {
     sell_threshold: number;
     regime_filter?: boolean;
     benchmark_symbol?: string;
+    universe_source?: "most_active" | "watchlist";
+    universe_size?: number;
     use_vol_sizing?: boolean;
     target_risk_pct?: number;
     min_dollar_volume?: number;

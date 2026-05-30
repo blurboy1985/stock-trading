@@ -71,6 +71,11 @@ export function Research() {
                     <td className="py-1.5 text-slate-500">{i + 1}</td>
                     <td className="font-semibold">
                       <Link to={`/ticker/${r.symbol}`} className="hover:text-accent">
+                        {r.in_watchlist && (
+                          <span className="text-accent mr-1" title="In your watchlist">
+                            ★
+                          </span>
+                        )}
                         {r.symbol}
                       </Link>
                     </td>

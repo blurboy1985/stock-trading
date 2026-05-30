@@ -9,6 +9,7 @@ import { Research } from "./pages/Research";
 import { History } from "./pages/History";
 import { Settings } from "./pages/Settings";
 import { DisclaimerFooter } from "./components/Disclosures";
+import { TradeWalkthrough, openTradeGuide } from "./components/TradeWalkthrough";
 
 const tabs = [
   { to: "/", label: "Dashboard", end: true },
@@ -48,6 +49,13 @@ export default function App() {
               </NavLink>
             ))}
           </nav>
+          <button
+            onClick={openTradeGuide}
+            className="text-xs font-semibold px-3 py-1.5 rounded-full border border-accent/40 text-accent bg-accent/10 hover:bg-accent/20 transition-colors"
+            title="Walkthrough: how to buy & sell in StockSim"
+          >
+            How to trade
+          </button>
           {broker && (
             <span
               className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
@@ -61,6 +69,7 @@ export default function App() {
           )}
         </div>
       </header>
+      <TradeWalkthrough />
 
       <main className="max-w-6xl mx-auto w-full px-5 py-7 flex-1">
         <Routes>

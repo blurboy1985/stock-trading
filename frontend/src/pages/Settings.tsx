@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type AppSettings } from "../api/client";
 import { Panel, Spinner, ErrorBanner, fmtPct } from "../components/ui";
 import { LimitationsPanel } from "../components/Disclosures";
+import { openTradeGuide } from "../components/TradeWalkthrough";
 
 const SIGNALS = ["technical", "volatility", "momentum", "sentiment", "fundamentals"];
 
@@ -76,6 +77,36 @@ export function Settings() {
             <span className="text-slate-500"> (paper only; never places live orders)</span>
           </span>
         </label>
+      </Panel>
+
+      {/* Universe */}
+      <Panel title="Universe">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label className="block">
+            <span className="text-xs text-slate-400">Scan source</span>
+            <select
+              value={draft.universe_source ?? "most_active"}
+              onChange={(e) => update("universe_source", e.target.value)}
+              className="inp"
+            >
+              <option value="most_active">
+                Most-active US stocks (broad daily scan)
+              </option>
+              <option value="watchlist">My watchlist only (faster)</option>
+            </select>
+            <span className="text-[11px] text-slate-500">
+              Broad scan ranks the day's most-active names plus your watchlist
+              (★). Watchlist-only is the fast path. Falls back to watchlist if
+              the screener is unavailable.
+            </span>
+          </label>
+          <NumField
+            label="Max symbols per scan"
+            value={draft.universe_size ?? 75}
+            step={5}
+            onChange={(v) => update("universe_size", Math.round(v))}
+          />
+        </div>
       </Panel>
 
       {/* Signal weights */}
@@ -304,6 +335,22 @@ export function Settings() {
           balances already live on your Alpaca paper account and appear when you
           log in to the Alpaca site.
         </p>
+      </Panel>
+
+      <Panel title="Getting Started">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <p className="text-sm text-slate-400 max-w-md">
+            New here, or want a refresher? Replay the broker's walkthrough — a
+            guided tour of how to find an idea, read its thesis, place a buy, and
+            sell or close a position.
+          </p>
+          <button
+            onClick={openTradeGuide}
+            className="bg-accent/15 border border-accent/40 text-accent text-sm px-4 py-2 rounded-lg hover:bg-accent/25 whitespace-nowrap"
+          >
+            Replay walkthrough →
+          </button>
+        </div>
       </Panel>
 
       <LimitationsPanel />
