@@ -28,6 +28,10 @@ class SettingsUpdate(BaseModel):
     target_risk_pct: float | None = None
     min_dollar_volume: float | None = None
     min_price: float | None = None
+    sentiment_backend: str | None = None
+    sentiment_halflife_days: float | None = None
+    sentiment_lm_weight: float | None = None
+    fundamentals_sector_relative: bool | None = None
 
 
 @router.get("")

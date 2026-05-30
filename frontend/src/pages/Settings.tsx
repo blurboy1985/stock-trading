@@ -103,6 +103,61 @@ export function Settings() {
         </p>
       </Panel>
 
+      {/* Sentiment & fundamentals tuning */}
+      <Panel title="Sentiment & Fundamentals">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label className="block">
+            <span className="text-xs text-slate-400">Sentiment engine</span>
+            <select
+              value={draft.sentiment_backend ?? "lexicon"}
+              onChange={(e) => update("sentiment_backend", e.target.value)}
+              className="inp"
+            >
+              <option value="lexicon">Lexicon (VADER + Loughran–McDonald)</option>
+              <option value="llm">Claude (LLM) — uses Claude Code subscription</option>
+            </select>
+            <span className="text-[11px] text-slate-500">
+              LLM runs via the local Claude Code CLI (no API key); falls back to
+              the lexicon on any error.
+            </span>
+          </label>
+          <NumField
+            label="News half-life (days)"
+            value={draft.sentiment_halflife_days ?? 3}
+            step={0.5}
+            onChange={(v) => update("sentiment_halflife_days", v)}
+          />
+          <label className="block">
+            <span className="text-xs text-slate-400">
+              Finance-lexicon weight (vs VADER)
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={draft.sentiment_lm_weight ?? 0.5}
+              onChange={(e) => update("sentiment_lm_weight", Number(e.target.value))}
+              className="w-full accent-blue-500"
+            />
+            <span className="text-sm font-mono">
+              {(draft.sentiment_lm_weight ?? 0.5).toFixed(2)}
+            </span>
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer mt-5">
+            <input
+              type="checkbox"
+              checked={draft.fundamentals_sector_relative ?? true}
+              onChange={(e) =>
+                update("fundamentals_sector_relative", e.target.checked)
+              }
+              className="w-4 h-4 accent-blue-500"
+            />
+            Score valuation relative to sector peers
+          </label>
+        </div>
+      </Panel>
+
       {/* Quant controls */}
       <Panel title="Quant Controls">
         <div className="flex flex-wrap gap-6 mb-4">

@@ -32,6 +32,11 @@ DEFAULTS: dict[str, Any] = {
     "target_risk_pct": 0.0025,       # target daily risk per position (ATR-based)
     "min_dollar_volume": 5_000_000,  # liquidity floor: median $-volume/day
     "min_price": 5.0,                # price floor (skip sub-$5 names)
+    # ── Sentiment / fundamentals tuning ───────────────────────────────
+    "sentiment_backend": "lexicon",      # "lexicon" (VADER+LM) or "llm" (Claude)
+    "sentiment_halflife_days": 3.0,      # recency decay half-life for headlines
+    "sentiment_lm_weight": 0.5,          # blend: Loughran-McDonald vs VADER
+    "fundamentals_sector_relative": True,  # value vs sector median (live universe)
 }
 
 

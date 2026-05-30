@@ -17,6 +17,7 @@ from .. import alpaca_client as ac
 from ..config import settings
 from ..db import SessionLocal
 from ..models import Recommendation, WatchlistItem
+from ..strategies import fundamentals as fundamentals_mod
 from ..strategies import regime as regime_mod
 from ..strategies.cross_section import momentum_signal
 from ..strategies.momentum import liquidity_ok, momentum_features
@@ -105,12 +106,23 @@ def generate(persist: bool = True) -> dict[str, Any]:
     }
     mom_signals = momentum_signal(raw_mom)
 
+    # 3b) Fundamentals: fetch raw info once per symbol, derive sector-median
+    #     baselines so valuation is scored relative to peers (live universe).
+    infos = {s: fundamentals_mod.get_info(s) for s in bars_by_symbol}
+    baselines = (
+        fundamentals_mod.build_sector_baselines(infos)
+        if cfg["fundamentals_sector_relative"]
+        else {}
+    )
+
     # 4) Evaluate each symbol with regime, momentum, and a liquidity guardrail.
     equity = _equity_best_effort()
     results: list[dict[str, Any]] = []
     for sym, df in bars_by_symbol.items():
         try:
             ok, why = liquidity_ok(df, cfg["min_dollar_volume"], cfg["min_price"])
+            info = infos.get(sym, {})
+            sector_baseline = baselines.get(info.get("sector")) if info else None
             decision = evaluate_symbol(
                 sym, df,
                 news=news.get(sym, []),
@@ -118,6 +130,11 @@ def generate(persist: bool = True) -> dict[str, Any]:
                 momentum=mom_signals.get(sym),
                 regime_score=regime_score,
                 liquidity_warning=None if ok else why,
+                sentiment_backend=cfg["sentiment_backend"],
+                sentiment_halflife_days=cfg["sentiment_halflife_days"],
+                sentiment_lm_weight=cfg["sentiment_lm_weight"],
+                sector_baseline=sector_baseline,
+                info=info,
             )
             _enrich(decision, regime, cfg, equity)
             results.append(decision)

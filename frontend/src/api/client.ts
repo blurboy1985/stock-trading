@@ -177,6 +177,10 @@ export interface AppSettings {
     target_risk_pct?: number;
     min_dollar_volume?: number;
     min_price?: number;
+    sentiment_backend?: "lexicon" | "llm";
+    sentiment_halflife_days?: number;
+    sentiment_lm_weight?: number;
+    fundamentals_sector_relative?: boolean;
   };
   watchlist: string[];
   broker: {

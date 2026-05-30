@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     apca_api_secret_key: str = ""
     alpaca_base_url: str = "https://paper-api.alpaca.markets"
 
+    # ── LLM sentiment backend (optional) ──────────────────────────────
+    # Only used when the `sentiment_backend` setting is "llm". It runs through
+    # the local Claude Code CLI subscription (Claude Agent SDK) — no API key.
+    # Leave the model blank to use the CLI's default; set it to pin a model.
+    anthropic_sentiment_model: str = ""
+
     # ── Safety ────────────────────────────────────────────────────────
     # The single source of truth for whether real money can move. Even with
     # this true, the trading layer additionally requires a non-paper base URL
