@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type AppSettings } from "../api/client";
 import { Panel, Spinner, ErrorBanner, fmtPct } from "../components/ui";
+import { LimitationsPanel } from "../components/Disclosures";
 
 const SIGNALS = ["technical", "volatility", "momentum", "sentiment", "fundamentals"];
 
@@ -304,6 +305,8 @@ export function Settings() {
           log in to the Alpaca site.
         </p>
       </Panel>
+
+      <LimitationsPanel />
     </div>
   );
 }

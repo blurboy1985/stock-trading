@@ -10,22 +10,31 @@ body,
 
 body {
   margin: 0;
-  background: #0b0e14;
-  color: #e2e8f0;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #f6f5fa;
+  color: #211b3d;
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
+::-webkit-scrollbar-track {
+  background: transparent;
+}
 ::-webkit-scrollbar-thumb {
-  background: #2a3543;
+  background: #d6d2e0;
   border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #bcb7c9;
 }
 
 @layer components {
   .inp {
-    @apply w-full bg-panel2 border border-edge rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-accent;
+    @apply w-full bg-panel2 border border-edge rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/15;
   }
 }
