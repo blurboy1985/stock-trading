@@ -13,9 +13,19 @@ import {
 } from "../components/ui";
 import { RegimeBanner } from "../components/RegimeBanner";
 
+type Filter = "all" | "watchlist" | "buys" | "sells";
+
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "watchlist", label: "★ Watchlist" },
+  { key: "buys", label: "Buys" },
+  { key: "sells", label: "Sells" },
+];
+
 export function Recommendations() {
   const qc = useQueryClient();
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>("all");
 
   const reco = useQuery({
     queryKey: ["reco"],
@@ -36,14 +46,22 @@ export function Recommendations() {
   if (reco.isLoading) return <Spinner label="Scoring the universe…" />;
   const data = reco.data;
   const recs = data?.recommendations ?? [];
+  const wlCount = recs.filter((r) => r.in_watchlist).length;
+
+  const shown = recs.filter((r) => {
+    if (filter === "watchlist") return r.in_watchlist;
+    if (filter === "buys") return r.action === "BUY";
+    if (filter === "sells") return r.action === "SELL";
+    return true;
+  });
 
   return (
     <div className="space-y-4">
       <RegimeBanner regime={data?.regime} />
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="text-sm text-slate-400">
           {data?.generated_at
-            ? `Ranked by risk-adjusted score · updated ${new Date(
+            ? `Scanned ${recs.length} symbols (★ ${wlCount} watchlist) · ranked by risk-adjusted score · updated ${new Date(
                 data.generated_at,
               ).toLocaleTimeString()}`
             : "Not yet generated"}
@@ -57,13 +75,35 @@ export function Recommendations() {
         </button>
       </div>
 
+      <div className="flex gap-1.5">
+        {FILTERS.map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
+              filter === f.key
+                ? "bg-accent/15 border-accent/40 text-accent"
+                : "bg-panel border-edge text-slate-400 hover:bg-panel2"
+            }`}
+          >
+            {f.label}
+            {f.key === "watchlist" && wlCount > 0 ? ` (${wlCount})` : ""}
+          </button>
+        ))}
+      </div>
+
       {buy.isError && <ErrorBanner message={(buy.error as Error).message} />}
       {recs.length === 0 && (
         <ErrorBanner message="No recommendations. Configure Alpaca credentials and refresh." />
       )}
+      {recs.length > 0 && shown.length === 0 && (
+        <p className="text-slate-400 text-sm py-6 text-center">
+          No names match this filter.
+        </p>
+      )}
 
       <div className="space-y-2">
-        {recs.map((r) => (
+        {shown.map((r) => (
           <RecoRow
             key={r.symbol}
             r={r}
@@ -96,6 +136,11 @@ function RecoRow({
       <div className="flex items-center gap-4 px-4 py-3">
         <div className="w-20">
           <Link to={`/ticker/${r.symbol}`} className="font-bold text-lg hover:text-accent">
+            {r.in_watchlist && (
+              <span className="text-accent mr-1" title="In your watchlist">
+                ★
+              </span>
+            )}
             {r.symbol}
           </Link>
           {r.liquidity_warning && (

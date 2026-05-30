@@ -29,10 +29,45 @@ _ATR_FLOOR = 0.005
 
 
 def get_universe() -> list[str]:
-    """Watchlist from the DB, falling back to the env-configured default."""
+    """The user's watchlist from the DB, falling back to the env default.
+
+    This is the *watchlist* (used for the Alpaca sync and Settings views), not
+    necessarily the full set of symbols scored each cycle — see
+    :func:`build_universe`.
+    """
     with SessionLocal() as db:
         rows = db.scalars(select(WatchlistItem.symbol)).all()
     return list(rows) if rows else settings.watchlist_symbols
+
+
+def build_universe(cfg: dict[str, Any]) -> tuple[list[str], set[str]]:
+    """Compose the set of symbols to score this cycle and the watchlist subset.
+
+    With ``universe_source == "most_active"`` (the default) the universe is the
+    day's most-active US stocks, *always* unioned with the full watchlist and the
+    benchmark (so those are scored + starred and the regime/RS baselines stay
+    anchored), deduped and capped at ``universe_size``. Falls back to a
+    watchlist-only universe when the source is set to ``"watchlist"`` or the
+    screener is unavailable. Returns ``(universe, watchlist_set)``.
+    """
+    watchlist = [s.upper() for s in get_universe()]
+    wl_set = set(watchlist)
+    bench = (cfg.get("benchmark_symbol") or "SPY").upper()
+    # Watchlist + benchmark are mandatory members, in that order.
+    must = list(dict.fromkeys([*watchlist, bench]))
+
+    if cfg.get("universe_source", "most_active") != "most_active":
+        return must, wl_set
+
+    size = int(cfg.get("universe_size", 75))
+    movers = [m.upper() for m in ac.get_most_actives(top=size)]
+    if not movers:  # screener outage → watchlist-only (current behavior)
+        return must, wl_set
+
+    must_set = set(must)
+    extra = [m for m in dict.fromkeys(movers) if m not in must_set]
+    room = max(0, size - len(must))
+    return must + extra[:room], wl_set
 
 
 def _news_by_symbol(symbols: list[str]) -> dict[str, list[dict[str, Any]]]:
@@ -65,7 +100,7 @@ def generate(persist: bool = True) -> dict[str, Any]:
 
     cfg = runtime_settings.get_all()
     weights = cfg["weights"]
-    universe = get_universe()
+    universe, watchlist_set = build_universe(cfg)
     news = _news_by_symbol(universe)
     start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=400)
 
@@ -79,18 +114,17 @@ def generate(persist: bool = True) -> dict[str, Any]:
         all_items = [item for items in news.values() for item in items]
         sentiment_llm.prewarm(all_items)
 
-    # 1) Batch-fetch bars (needed up front for breadth + cross-sectional momentum).
-    bars_by_symbol: dict[str, Any] = {}
+    # 1) Batch-fetch bars in a single request (needed up front for breadth +
+    #    cross-sectional momentum). Batching keeps a large-universe scan fast.
     errors: dict[str, str] = {}
+    try:
+        bars_by_symbol: dict[str, Any] = ac.get_bars_multi(universe, start=start)
+    except Exception as e:  # noqa: BLE001 — fall back to per-symbol below
+        bars_by_symbol = {}
+        errors["_bars_batch"] = f"{type(e).__name__}: {e}"
     for sym in universe:
-        try:
-            df = ac.get_bars(sym, start=start)
-            if df.empty:
-                errors[sym] = "no bars"
-            else:
-                bars_by_symbol[sym] = df
-        except Exception as e:  # noqa: BLE001 — skip a symbol, keep going
-            errors[sym] = f"{type(e).__name__}: {e}"
+        if sym not in bars_by_symbol:
+            errors.setdefault(sym, "no bars")
 
     # 2) Market regime from the benchmark (+ breadth across the universe).
     bench_sym = cfg["benchmark_symbol"]
@@ -146,6 +180,7 @@ def generate(persist: bool = True) -> dict[str, Any]:
                 sector_baseline=sector_baseline,
                 info=info,
             )
+            decision["in_watchlist"] = sym in watchlist_set
             _enrich(decision, regime, cfg, equity)
             results.append(decision)
         except Exception as e:  # noqa: BLE001
@@ -155,8 +190,14 @@ def generate(persist: bool = True) -> dict[str, Any]:
     results.sort(key=lambda d: d.get("rank_score", d["score"]), reverse=True)
 
     if persist and results:
+        # With a broad universe, persist only the top-ranked names plus every
+        # watchlist name, so the history table doesn't balloon each cycle.
+        to_persist = [
+            d for i, d in enumerate(results)
+            if i < 25 or d.get("in_watchlist")
+        ]
         with SessionLocal() as db:
-            for d in results:
+            for d in to_persist:
                 db.add(
                     Recommendation(
                         symbol=d["symbol"],

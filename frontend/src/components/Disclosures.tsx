@@ -16,6 +16,10 @@ const LIMITATIONS: { title: string; body: string }[] = [
     body: "Signals are computed on daily bars — this is a swing / position tool, not an intraday or scalping system.",
   },
   {
+    title: "Where ideas come from",
+    body: "Recommendations scan the day's most-active US stocks (a rotating universe), not just your watchlist — your watchlist names are always included and marked with a ★. SELL/HOLD calls are signal-driven on this universe; they aren't tied to what you hold.",
+  },
+  {
     title: "One-click sizing",
     body: "The quick Buy sizes to your max-position cap, not the smaller volatility-targeted suggestion shown on the row. Use the Ticker panel to trade an exact size.",
   },

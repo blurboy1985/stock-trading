@@ -63,6 +63,14 @@ def _news_client():
     return NewsClient(settings.apca_api_key_id, settings.apca_api_secret_key)
 
 
+@lru_cache
+def _screener_client():
+    _require_creds()
+    from alpaca.data.historical.screener import ScreenerClient
+
+    return ScreenerClient(settings.apca_api_key_id, settings.apca_api_secret_key)
+
+
 # ── Market data ────────────────────────────────────────────────────────
 
 
@@ -96,6 +104,67 @@ def get_bars(
     if isinstance(df.index, pd.MultiIndex):
         df = df.xs(symbol, level="symbol")
     return df[["open", "high", "low", "close", "volume"]]
+
+
+def get_bars_multi(
+    symbols: list[str],
+    start: dt.datetime | dt.date | str,
+    end: dt.datetime | dt.date | str | None = None,
+    timeframe: str = "1Day",
+) -> dict[str, pd.DataFrame]:
+    """Batch historical bars for many symbols in a single request.
+
+    Returns ``{symbol: OHLCV DataFrame}``; symbols with no data are omitted.
+    One API call instead of N — used to keep a large-universe scan fast.
+    """
+    from alpaca.data.requests import StockBarsRequest
+    from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+
+    tf_map = {
+        "1Day": TimeFrame.Day,
+        "1Hour": TimeFrame.Hour,
+        "1Min": TimeFrame.Minute,
+        "15Min": TimeFrame(15, TimeFrameUnit.Minute),
+    }
+    if not symbols:
+        return {}
+    req = StockBarsRequest(
+        symbol_or_symbols=list(symbols),
+        timeframe=tf_map.get(timeframe, TimeFrame.Day),
+        start=pd.Timestamp(start).to_pydatetime(),
+        end=pd.Timestamp(end).to_pydatetime() if end else None,
+    )
+    df = _data_client().get_stock_bars(req).df
+    out: dict[str, pd.DataFrame] = {}
+    if df is None or df.empty:
+        return out
+    cols = ["open", "high", "low", "close", "volume"]
+    if isinstance(df.index, pd.MultiIndex):
+        for sym in df.index.get_level_values("symbol").unique():
+            sub = df.xs(sym, level="symbol")
+            if not sub.empty:
+                out[str(sym)] = sub[cols]
+    elif len(symbols) == 1:
+        out[symbols[0]] = df[cols]
+    return out
+
+
+def get_most_actives(top: int = 100, by: str = "volume") -> list[str]:
+    """Today's most-active US stocks (symbols only). ``[]`` on any failure.
+
+    Best-effort: drives the dynamic recommendation universe, so a screener
+    outage must never break a scoring cycle (the caller falls back to the
+    watchlist).
+    """
+    try:
+        from alpaca.data.requests import MostActivesRequest
+
+        # Alpaca caps `top` at 100.
+        req = MostActivesRequest(top=max(1, min(int(top), 100)), by=by)
+        resp = _screener_client().get_most_actives(req)
+        return [a.symbol for a in resp.most_actives]
+    except Exception:  # noqa: BLE001 — screener is best-effort
+        return []
 
 
 def get_latest_quote(symbol: str) -> dict[str, Any]:
