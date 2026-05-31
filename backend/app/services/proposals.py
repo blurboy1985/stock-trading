@@ -281,7 +281,16 @@ def _load_pending(db: Any, proposal_id: int) -> TradeProposal:
 def _execute(db: Any, row: TradeProposal) -> dict[str, Any]:
     """Place a pending row's order, mutating its status. Does not raise."""
     try:
-        res = portfolio.place_order(row.symbol, row.side, qty=row.qty, source="auto")
+        if row.side == "sell":
+            # Exit via close_position, which cancels the entry's open bracket
+            # (OCO stop/target) legs first. A plain market sell would leave those
+            # legs working — one could later fire a second sell and open a short
+            # at the broker, which validate_order can't prevent (the leg lives at
+            # Alpaca). Proposals always exit the full held qty, so a full close
+            # is equivalent.
+            res = portfolio.close_position(row.symbol, source="auto")
+        else:
+            res = portfolio.place_order(row.symbol, row.side, qty=row.qty, source="auto")
     except Exception as e:  # noqa: BLE001 — capture every failure on the row
         row.status = "failed"
         row.result = str(e)

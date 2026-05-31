@@ -166,13 +166,23 @@ def run_backtest(
                 continue
             exit_price = None
             reason = None
+            open_px = float(bar["open"]) if not pd.isna(bar["open"]) else None
             if pos.stop is not None and bar["low"] <= pos.stop:
                 # A stop that has ratcheted to/above entry is a trailing exit.
                 trailed = config.trailing_atr_mult and pos.stop >= pos.entry_price
-                exit_price = pos.stop
+                # A stop fires a *market* sell: on a gap-through it fills at the
+                # (worse) open, not the stop price, and we add slippage on top —
+                # real stops never fill exactly at the stop.
+                raw = open_px if (open_px is not None and open_px < pos.stop) else pos.stop
+                exit_price = _slip(raw, config.slippage_bps, "sell")
                 reason = "trailing_stop" if trailed else "stop_loss"
             elif pos.target is not None and bar["high"] >= pos.target:
-                exit_price, reason = pos.target, "take_profit"
+                # Take-profit is a *limit*: it fills at the target (or better on a
+                # gap up), with no adverse slippage.
+                exit_price = (
+                    open_px if (open_px is not None and open_px > pos.target) else pos.target
+                )
+                reason = "take_profit"
             if exit_price is not None:
                 _close(state, sym, exit_price, date_str, i, config, reason)
 

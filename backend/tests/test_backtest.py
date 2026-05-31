@@ -40,20 +40,40 @@ def test_backtest_runs_and_reports_metrics():
 
 
 def test_stop_loss_caps_losses():
-    # Smooth uptrend builds a long position, then a sudden gap-down should
-    # trigger the intrabar stop rather than riding the position down.
+    # Uptrend builds a long, then a *gradual* decline (no gap) trades through the
+    # stop intrabar — so the stop fills near its level and bounds the loss ~5%.
     up = np.linspace(100, 140, 100)
-    after = np.full(60, 108.0)  # deep gap down (below any 5% stop), then flat
+    after = np.linspace(140, 108, 60)  # smooth decline through the stop, no gap
     bars = _make_bars(np.concatenate([up, after]))
+    # Disable signal exits (sell_threshold unreachable) so the stop is the only
+    # way out — isolating that a no-gap decline fills the stop near its level.
     res = run_backtest(
         {"TEST": bars},
-        BacktestConfig(warmup=50, stop_loss_pct=0.05, take_profit_pct=0.20),
+        BacktestConfig(
+            warmup=50, stop_loss_pct=0.05, take_profit_pct=0.20, sell_threshold=-1.0
+        ),
     )
     stops = [t for t in res["trades"] if t["exit_reason"] == "stop_loss"]
     assert len(stops) >= 1
     # Stop-loss bounds the loss near the configured 5% (plus slippage).
     for t in stops:
         assert -0.08 < t["return_pct"] < 0
+
+
+def test_stop_does_not_cap_loss_on_a_gap():
+    # Realism check (fix #4): a position carried into an overnight gap-down fills
+    # at the (worse) open, NOT at the stop — so a 5% stop does NOT bound the loss
+    # when price gaps straight through it.
+    up = np.linspace(100, 140, 100)
+    after = np.full(60, 108.0)  # next bar opens ~23% below the prior close
+    bars = _make_bars(np.concatenate([up, after]))
+    res = run_backtest(
+        {"TEST": bars},
+        BacktestConfig(warmup=50, stop_loss_pct=0.05, take_profit_pct=0.20),
+    )
+    gapped = [t for t in res["trades"] if t["return_pct"] < -0.10]
+    # At least one stop filled well beyond the 5% stop (filled at the gap open).
+    assert gapped, "expected a gap-through fill worse than the stop level"
 
 
 def test_atr_trailing_stop_lets_winners_run_then_locks_in():

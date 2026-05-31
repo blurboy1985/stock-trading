@@ -121,7 +121,10 @@ def generate(persist: bool = True) -> dict[str, Any]:
     news = news_sources.build_symbol_news(
         universe, watchlist_set, _news_by_symbol(universe), cfg
     )
-    start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=400)
+    # ~500 calendar days ≈ 345 trading bars — enough headroom for 12-1 momentum
+    # (needs LONG+SKIP+1 = 274 bars). 400 days (~273 bars) sat right on that
+    # edge, so ret_12_1 silently came back None and the momentum signal degraded.
+    start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=500)
 
     # With the LLM sentiment backend, score every distinct headline in one
     # Claude call up front. The per-symbol scoring below then hits the cache
