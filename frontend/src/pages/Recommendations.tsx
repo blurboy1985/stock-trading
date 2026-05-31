@@ -704,16 +704,13 @@ function SignalNotes({ r }: { r: Recommendation }) {
         <span>{reason}</span>{" "}
         <button
           onClick={() => setOpenNote(open ? null : key)}
-          className={`inline-flex items-center gap-1 align-middle rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-none transition-colors ${
-            open
-              ? "bg-accent/20 border-accent/50 text-accent"
-              : "bg-accent/10 border-accent/40 text-accent hover:bg-accent/20"
+          className={`align-middle text-sm leading-none transition-colors ${
+            open ? "text-accent" : "text-slate-400 hover:text-accent"
           }`}
           title="Show evidence & definition"
           aria-label="Show evidence and definition"
         >
-          <span className="text-xs leading-none">ⓘ</span>
-          why
+          ⓘ
         </button>
         {open && (
           <NoteEvidence
@@ -732,8 +729,8 @@ function SignalNotes({ r }: { r: Recommendation }) {
     <div>
       <SectionLabel>Signal notes</SectionLabel>
       <p className="text-[11px] text-slate-400 mb-2">
-        Tap the <span className="text-accent font-semibold">ⓘ why</span> chip on any
-        note for its definition, the live numbers behind it, and sources.
+        Tap <span className="text-accent">ⓘ</span> on any note for its definition, the
+        live numbers behind it, and sources.
       </p>
       <div className="space-y-2.5">
         {families.map((f) => {
