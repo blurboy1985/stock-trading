@@ -9,6 +9,12 @@ export const fmtPct = (n: number | null | undefined, digits = 2) =>
 export const fmtNum = (n: number | null | undefined, digits = 2) =>
   n == null ? "—" : n.toFixed(digits);
 
+export const fmtSignedUsd = (n: number | null | undefined) =>
+  n == null ? "—" : `${n >= 0 ? "+" : "-"}${fmtUsd(Math.abs(n))}`;
+
+export const fmtSignedPct = (n: number | null | undefined, digits = 2) =>
+  n == null ? "—" : `${n >= 0 ? "+" : "-"}${(Math.abs(n) * 100).toFixed(digits)}%`;
+
 export function Panel({
   title,
   children,

@@ -37,6 +37,16 @@ def _enumval(v: Any, default: Any = "") -> Any:
     return getattr(v, "value", v)
 
 
+def _safe_float(v: Any, default: float = 0.0) -> float:
+    """Best-effort float coercion. Alpaca sends numbers as strings and uses
+    ``None`` for fields that don't apply (e.g. ``stop_price`` on a market order).
+    """
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
 def _require_creds() -> None:
     if not settings.has_credentials:
         raise AlpacaUnavailable(
@@ -406,11 +416,24 @@ def sync_watchlist(
 def get_account() -> dict[str, Any]:
     a = _trading_client().get_account()
     return {
+        "account_number": getattr(a, "account_number", "") or "",
         "equity": float(a.equity),
+        "last_equity": float(a.last_equity),
         "cash": float(a.cash),
         "buying_power": float(a.buying_power),
         "portfolio_value": float(a.portfolio_value),
-        "last_equity": float(a.last_equity),
+        "long_market_value": _safe_float(getattr(a, "long_market_value", 0)),
+        "short_market_value": _safe_float(getattr(a, "short_market_value", 0)),
+        "position_market_value": _safe_float(getattr(a, "position_market_value", 0)),
+        "regt_buying_power": _safe_float(getattr(a, "regt_buying_power", 0)),
+        "daytrading_buying_power": _safe_float(getattr(a, "daytrading_buying_power", 0)),
+        "initial_margin": _safe_float(getattr(a, "initial_margin", 0)),
+        "maintenance_margin": _safe_float(getattr(a, "maintenance_margin", 0)),
+        "accrued_fees": _safe_float(getattr(a, "accrued_fees", 0)),
+        "daytrade_count": int(getattr(a, "daytrade_count", 0) or 0),
+        "pattern_day_trader": bool(getattr(a, "pattern_day_trader", False)),
+        "trading_blocked": bool(getattr(a, "trading_blocked", False)),
+        "account_blocked": bool(getattr(a, "account_blocked", False)),
         "currency": a.currency,
         "is_paper": settings.is_paper,
         "status": _enumval(a.status),
@@ -424,11 +447,19 @@ def get_positions() -> list[dict[str, Any]]:
             {
                 "symbol": p.symbol,
                 "qty": float(p.qty),
+                "qty_available": _safe_float(getattr(p, "qty_available", p.qty), float(p.qty or 0)),
                 "avg_entry_price": float(p.avg_entry_price),
                 "current_price": float(p.current_price or 0),
+                "lastday_price": _safe_float(getattr(p, "lastday_price", 0)),
                 "market_value": float(p.market_value or 0),
+                "cost_basis": _safe_float(getattr(p, "cost_basis", 0)),
                 "unrealized_pl": float(p.unrealized_pl or 0),
                 "unrealized_plpc": float(p.unrealized_plpc or 0),
+                "unrealized_intraday_pl": _safe_float(getattr(p, "unrealized_intraday_pl", 0)),
+                "unrealized_intraday_plpc": _safe_float(getattr(p, "unrealized_intraday_plpc", 0)),
+                "change_today": _safe_float(getattr(p, "change_today", 0)),
+                "asset_class": _enumval(getattr(p, "asset_class", "")),
+                "exchange": _enumval(getattr(p, "exchange", "")),
                 "side": _enumval(p.side),
             }
         )
@@ -626,10 +657,55 @@ def list_orders(status: str = "all", limit: int = 50) -> list[dict[str, Any]]:
                 "symbol": o.symbol,
                 "qty": float(o.qty or 0),
                 "filled_qty": float(o.filled_qty or 0),
+                "filled_avg_price": _safe_float(getattr(o, "filled_avg_price", 0)) or None,
                 "side": _enumval(o.side),
                 "type": _enumval(o.order_type),
+                "order_class": _enumval(getattr(o, "order_class", "")),
+                "time_in_force": _enumval(getattr(o, "time_in_force", "")),
+                "limit_price": _safe_float(getattr(o, "limit_price", 0)) or None,
+                "stop_price": _safe_float(getattr(o, "stop_price", 0)) or None,
                 "status": _enumval(o.status),
+                "extended_hours": bool(getattr(o, "extended_hours", False)),
                 "submitted_at": o.submitted_at.isoformat() if o.submitted_at else None,
+                "filled_at": (lambda d: d.isoformat() if d else None)(getattr(o, "filled_at", None)),
+            }
+        )
+    return out
+
+
+def get_activities(
+    activity_types: str | None = None, page_size: int = 100
+) -> list[dict[str, Any]]:
+    """Account activity feed (fills, dividends, fees, transfers, …).
+
+    Mirrors the "Activities" tab on the Alpaca dashboard. ``activity_types`` is an
+    optional comma-separated filter (e.g. ``"FILL"``); when omitted, every type is
+    returned, newest first.
+    """
+    from alpaca.trading.requests import GetAccountActivitiesRequest
+
+    kwargs: dict[str, Any] = {"page_size": max(1, min(int(page_size), 100))}
+    if activity_types:
+        kwargs["activity_types"] = [t.strip() for t in activity_types.split(",") if t.strip()]
+    req = GetAccountActivitiesRequest(**kwargs)
+
+    out: list[dict[str, Any]] = []
+    for act in _trading_client().get_account_activities(req):
+        when = getattr(act, "transaction_time", None) or getattr(act, "date", None)
+        out.append(
+            {
+                "id": str(getattr(act, "id", "")),
+                "activity_type": _enumval(getattr(act, "activity_type", "")),
+                "symbol": getattr(act, "symbol", "") or "",
+                "side": _enumval(getattr(act, "side", "")),
+                "qty": _safe_float(getattr(act, "qty", 0)),
+                "cum_qty": _safe_float(getattr(act, "cum_qty", 0)),
+                "leaves_qty": _safe_float(getattr(act, "leaves_qty", 0)),
+                "price": _safe_float(getattr(act, "price", 0)),
+                "net_amount": _safe_float(getattr(act, "net_amount", 0)),
+                "order_status": _enumval(getattr(act, "order_status", "")),
+                "description": getattr(act, "description", "") or "",
+                "date": when.isoformat() if hasattr(when, "isoformat") else (str(when) if when else None),
             }
         )
     return out

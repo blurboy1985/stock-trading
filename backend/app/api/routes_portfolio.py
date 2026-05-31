@@ -32,6 +32,17 @@ def get_orders(status: str = "all", limit: int = 50):
         raise HTTPException(status_code=503, detail=str(e))
 
 
+@router.get("/activities")
+def get_activities(activity_types: str | None = None, page_size: int = 100):
+    """Account activity feed (fills, dividends, fees, …) for the Activities tab."""
+    try:
+        return {"activities": ac.get_activities(activity_types=activity_types, page_size=page_size)}
+    except ac.AlpacaUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Activities failed: {e}")
+
+
 @router.post("/order")
 def submit_order(req: OrderRequest):
     try:
