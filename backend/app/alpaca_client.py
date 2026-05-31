@@ -24,6 +24,19 @@ class AlpacaUnavailable(RuntimeError):
     """Raised when an Alpaca call is attempted without usable credentials."""
 
 
+def _enumval(v: Any, default: Any = "") -> Any:
+    """Return an enum's plain ``.value`` (e.g. ``"buy"``, ``"filled"``, ``"NASDAQ"``).
+
+    Alpaca's SDK enums are ``str, Enum`` members whose ``str()`` renders the
+    qualified name (``OrderSide.BUY``), which leaks into API responses and breaks
+    the frontend's ``side === "buy"`` / ``status === "filled"`` checks. Pull the
+    underlying value instead; tolerate plain strings and ``None``.
+    """
+    if v is None:
+        return default
+    return getattr(v, "value", v)
+
+
 def _require_creds() -> None:
     if not settings.has_credentials:
         raise AlpacaUnavailable(
@@ -178,7 +191,7 @@ def get_asset(symbol: str) -> dict[str, Any]:
     return {
         "symbol": a.symbol,
         "name": getattr(a, "name", "") or "",
-        "exchange": str(getattr(a, "exchange", "") or ""),
+        "exchange": _enumval(getattr(a, "exchange", "") or ""),
         "tradable": bool(getattr(a, "tradable", False)),
         "fractionable": bool(getattr(a, "fractionable", False)),
     }
@@ -400,7 +413,7 @@ def get_account() -> dict[str, Any]:
         "last_equity": float(a.last_equity),
         "currency": a.currency,
         "is_paper": settings.is_paper,
-        "status": str(a.status),
+        "status": _enumval(a.status),
     }
 
 
@@ -416,7 +429,7 @@ def get_positions() -> list[dict[str, Any]]:
                 "market_value": float(p.market_value or 0),
                 "unrealized_pl": float(p.unrealized_pl or 0),
                 "unrealized_plpc": float(p.unrealized_plpc or 0),
-                "side": str(p.side),
+                "side": _enumval(p.side),
             }
         )
     return out
@@ -510,8 +523,8 @@ def submit_order(
         "alpaca_order_id": str(o.id),
         "symbol": o.symbol,
         "qty": float(o.qty),
-        "side": str(o.side),
-        "status": str(o.status),
+        "side": _enumval(o.side),
+        "status": _enumval(o.status),
         "submitted_at": o.submitted_at.isoformat() if o.submitted_at else None,
     }
 
@@ -550,8 +563,8 @@ def close_position(symbol: str) -> dict[str, Any]:
         "alpaca_order_id": str(getattr(o, "id", "")),
         "symbol": getattr(o, "symbol", symbol),
         "qty": float(getattr(o, "qty", 0) or 0),
-        "side": str(getattr(o, "side", "sell")),
-        "status": str(getattr(o, "status", "accepted")),
+        "side": _enumval(getattr(o, "side", "sell"), "sell"),
+        "status": _enumval(getattr(o, "status", "accepted"), "accepted"),
         "submitted_at": submitted.isoformat() if submitted else None,
     }
 
@@ -613,9 +626,9 @@ def list_orders(status: str = "all", limit: int = 50) -> list[dict[str, Any]]:
                 "symbol": o.symbol,
                 "qty": float(o.qty or 0),
                 "filled_qty": float(o.filled_qty or 0),
-                "side": str(o.side),
-                "type": str(o.order_type),
-                "status": str(o.status),
+                "side": _enumval(o.side),
+                "type": _enumval(o.order_type),
+                "status": _enumval(o.status),
                 "submitted_at": o.submitted_at.isoformat() if o.submitted_at else None,
             }
         )

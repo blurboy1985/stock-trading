@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api, type Proposal } from "../api/client";
-import { Panel, Spinner, ErrorBanner, ActionBadge, fmtUsd, fmtPct } from "../components/ui";
+import { Panel, Spinner, ActionBadge, fmtUsd, fmtPct } from "../components/ui";
 
 type Banner = { kind: "ok" | "err"; text: string };
 
