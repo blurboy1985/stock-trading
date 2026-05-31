@@ -28,11 +28,18 @@ export interface Recommendation {
   breakdown: Record<string, SignalBreakdown>;
 }
 
+export interface RegimeComponent {
+  name: string;
+  contribution: number;
+  detail: string;
+}
+
 export interface Regime {
   label: "risk_on" | "neutral" | "risk_off";
   score: number;
   multiplier: number;
   reasons: string[];
+  components?: RegimeComponent[];
   metrics: Record<string, number | string | boolean | null>;
 }
 
@@ -69,23 +76,77 @@ export interface Proposal {
 export interface Position {
   symbol: string;
   qty: number;
+  qty_available: number;
   avg_entry_price: number;
   current_price: number;
+  lastday_price: number;
   market_value: number;
+  cost_basis: number;
   unrealized_pl: number;
   unrealized_plpc: number;
+  unrealized_intraday_pl: number;
+  unrealized_intraday_plpc: number;
+  change_today: number;
+  asset_class: string;
+  exchange: string;
   side: string;
 }
 
 export interface Account {
+  account_number?: string;
   equity: number;
+  last_equity: number;
   cash: number;
   buying_power: number;
   portfolio_value: number;
-  last_equity: number;
+  long_market_value: number;
+  short_market_value: number;
+  position_market_value: number;
+  regt_buying_power: number;
+  daytrading_buying_power: number;
+  initial_margin: number;
+  maintenance_margin: number;
+  accrued_fees: number;
+  daytrade_count: number;
+  pattern_day_trader: boolean;
+  trading_blocked: boolean;
+  account_blocked: boolean;
   currency: string;
   is_paper: boolean;
   status: string;
+}
+
+export interface OrderRow {
+  id: string;
+  symbol: string;
+  qty: number;
+  filled_qty: number;
+  filled_avg_price: number | null;
+  side: string;
+  type: string;
+  order_class: string;
+  time_in_force: string;
+  limit_price: number | null;
+  stop_price: number | null;
+  status: string;
+  extended_hours: boolean;
+  submitted_at: string | null;
+  filled_at: string | null;
+}
+
+export interface Activity {
+  id: string;
+  activity_type: string;
+  symbol: string;
+  side: string;
+  qty: number;
+  cum_qty: number;
+  leaves_qty: number;
+  price: number;
+  net_amount: number;
+  order_status: string;
+  description: string;
+  date: string | null;
 }
 
 export interface PortfolioResponse {
@@ -275,7 +336,9 @@ export const api = {
     ),
   portfolio: () => req<PortfolioResponse>("/api/portfolio"),
   orders: (status = "all") =>
-    req<{ orders: any[] }>(`/api/portfolio/orders?status=${status}`),
+    req<{ orders: OrderRow[] }>(`/api/portfolio/orders?status=${status}`),
+  activities: (page_size = 100) =>
+    req<{ activities: Activity[] }>(`/api/portfolio/activities?page_size=${page_size}`),
   cancelOrder: (id: string) =>
     req<{ cancelled: string }>(`/api/portfolio/order/${id}`, { method: "DELETE" }),
   closePosition: (symbol: string) =>

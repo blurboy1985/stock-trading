@@ -213,16 +213,7 @@ function RecoRow({
         <div className="bg-panel2 px-4 py-4 border-t border-edge space-y-5">
           <ScoreExplainer r={r} sizing={sizing} />
           <SizingExplainer r={r} sizing={sizing} />
-          {r.reasons.length > 0 && (
-            <div>
-              <SectionLabel>Signal notes</SectionLabel>
-              <ul className="text-sm text-slate-600 list-disc pl-5 space-y-0.5">
-                {r.reasons.map((reason, i) => (
-                  <li key={i}>{reason}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <SignalNotes r={r} />
         </div>
       )}
     </Panel>
@@ -521,6 +512,112 @@ function SizingExplainer({ r, sizing }: { r: Recommendation; sizing: SizingCfg }
       {r.liquidity_warning && (
         <p className="text-xs text-sell mt-2">⚠ {r.liquidity_warning}</p>
       )}
+    </div>
+  );
+}
+
+// What each signal family actually measures — shown next to its notes so a
+// reason like "RSI 28 oversold" is anchored to the family (and weight) it feeds.
+const FAMILY_INFO: Record<string, { label: string; about: string }> = {
+  technical: {
+    label: "Technical",
+    about: "RSI, MACD & ADX-confirmed MA-crossover trend.",
+  },
+  volatility: {
+    label: "Volatility",
+    about: "Donchian/Bollinger breakouts & volume spikes.",
+  },
+  momentum: {
+    label: "Momentum",
+    about: "Cross-sectional relative strength vs the universe.",
+  },
+  sentiment: {
+    label: "Sentiment",
+    about: "Recency-weighted, finance-tuned news polarity.",
+  },
+  fundamentals: {
+    label: "Fundamentals",
+    about: "Sector-relative value, growth, quality & balance-sheet health.",
+  },
+};
+
+const FAMILY_ORDER = ["technical", "volatility", "momentum", "sentiment", "fundamentals"];
+
+/**
+ * Signal notes, grouped by the family that produced them — each note sits under
+ * its family's score and weight so you can see which signal said what and how
+ * much it counted toward the composite.
+ */
+function SignalNotes({ r }: { r: Recommendation }) {
+  const families = Object.keys(r.breakdown).sort(
+    (a, b) => FAMILY_ORDER.indexOf(a) - FAMILY_ORDER.indexOf(b),
+  );
+
+  // Reasons attached to a family (vs. top-level notes like the liquidity
+  // guardrail, which scoring prepends outside any family's breakdown).
+  const familyReasons = new Set<string>();
+  for (const f of families) {
+    for (const reason of r.breakdown[f]?.reasons ?? []) familyReasons.add(reason);
+  }
+  const otherNotes = r.reasons.filter((x) => !familyReasons.has(x));
+
+  return (
+    <div>
+      <SectionLabel>Signal notes</SectionLabel>
+      <div className="space-y-2">
+        {families.map((f) => {
+          const b = r.breakdown[f];
+          if (!b) return null;
+          const info = FAMILY_INFO[f] ?? { label: f, about: "" };
+          const contribution = b.score * b.weight;
+          return (
+            <div key={f} className="text-sm">
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className="font-semibold text-slate-700 capitalize">
+                  {info.label}
+                </span>
+                <span
+                  className={`font-mono text-xs ${
+                    b.score > 0
+                      ? "text-buy"
+                      : b.score < 0
+                        ? "text-sell"
+                        : "text-slate-400"
+                  }`}
+                >
+                  {signed(b.score)}
+                </span>
+                <span className="font-mono text-[11px] text-slate-400">
+                  ×{(b.weight * 100).toFixed(0)}% → {signed(contribution, 3)}
+                </span>
+                <span className="text-[11px] text-slate-400">{info.about}</span>
+              </div>
+              {b.reasons.length > 0 ? (
+                <ul className="text-sm text-slate-600 list-disc pl-5 space-y-0.5 mt-0.5">
+                  {b.reasons.map((reason, i) => (
+                    <li key={i}>{reason}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-slate-400 pl-5 mt-0.5 italic">
+                  no notable signal — neutral contribution
+                </p>
+              )}
+            </div>
+          );
+        })}
+
+        {otherNotes.length > 0 && (
+          <div className="text-sm pt-1 border-t border-edge/60">
+            <span className="font-semibold text-slate-700">Other</span>
+            <ul className="text-sm text-slate-600 list-disc pl-5 space-y-0.5 mt-0.5">
+              {otherNotes.map((reason, i) => (
+                <li key={i}>{reason}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
