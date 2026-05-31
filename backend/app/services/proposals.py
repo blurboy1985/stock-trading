@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from .. import alpaca_client as ac
 from ..config import settings
 from ..db import SessionLocal
 from ..models import TradeProposal
@@ -52,6 +53,17 @@ def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
     regime = (reco.get("regime") or {}).get("label")
     reco_by_sym = {d["symbol"]: d for d in reco.get("recommendations", [])}
 
+    # Symbols with an open (unfilled) order at the broker — e.g. a confirmed buy
+    # that hasn't filled yet (queued outside market hours, or still working).
+    # Once a proposal is executed it's no longer "pending", and the position
+    # won't appear in `held` until the order fills, so without this guard the
+    # same buy/sell gets re-proposed every cycle. Best-effort: an orders outage
+    # must not block proposing fresh trades.
+    try:
+        open_orders = {(o["symbol"], o["side"]) for o in ac.list_orders(status="open", limit=500)}
+    except Exception:  # noqa: BLE001 — open-order lookup is advisory only
+        open_orders = set()
+
     created: list[TradeProposal] = []
     with SessionLocal() as db:
         pending = {
@@ -66,7 +78,7 @@ def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
         for sym, p in held.items():
             if sym not in sell_syms or float(p["qty"]) <= 0:
                 continue
-            if (sym, "sell") in pending:
+            if (sym, "sell") in pending or (sym, "sell") in open_orders:
                 continue
             d = reco_by_sym.get(sym, {})
             price = float(p.get("current_price") or d.get("price") or 0.0)
@@ -80,7 +92,7 @@ def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
         # Entries: top BUYs we don't already hold.
         for d in reco.get("top_buys", []):
             sym = d["symbol"]
-            if sym in held or (sym, "buy") in pending:
+            if sym in held or (sym, "buy") in pending or (sym, "buy") in open_orders:
                 continue
             price = float(d.get("price") or 0.0)
             if price <= 0:
