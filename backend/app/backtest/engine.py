@@ -46,6 +46,8 @@ class BacktestConfig:
     take_profit_pct: float | None = None
     buy_threshold: float = 0.25
     sell_threshold: float = -0.25
+    # Entry-selectivity gate: min weight-share of families voting long for a BUY.
+    min_agreement: float = 0.0
     # ── ATR-based exits ───────────────────────────────────────────────
     # When >0 the initial stop is placed ``atr_stop_mult`` ATRs below the
     # fill (volatility-scaled), overriding the flat ``stop_loss_pct``.
@@ -111,6 +113,7 @@ def _evaluate(
     momentum=None,
     regime_score: float | None = None,
     regime_hard_gate: float | None = None,
+    min_agreement: float = 0.0,
 ) -> dict[str, Any]:
     """Technical + volatility + (cross-sectional) momentum on the closed window."""
     vol = volatility_signal(window)
@@ -122,7 +125,7 @@ def _evaluate(
         results["momentum"] = momentum
     decision = combine(
         results, weights, regime_score=regime_score,
-        regime_hard_gate=regime_hard_gate,
+        regime_hard_gate=regime_hard_gate, min_agreement=min_agreement,
     )
     # Surface ATR (in price terms) for volatility-scaled / trailing stops.
     decision["atr"] = vol.metrics.get("atr")
@@ -199,7 +202,7 @@ def run_backtest(
                 continue
             decision = _evaluate(
                 window, config.weights, mom_signals.get(sym), regime_score,
-                config.regime_hard_gate,
+                config.regime_hard_gate, config.min_agreement,
             )
             score = decision["score"]
             open_px = float(bar["open"])

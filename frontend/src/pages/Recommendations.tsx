@@ -12,6 +12,7 @@ import {
   fmtPct,
 } from "../components/ui";
 import { RegimeBanner } from "../components/RegimeBanner";
+import { SectionGuide } from "../components/SectionGuide";
 
 // Sizing/threshold context pulled from Settings so the explanations below show
 // the user's *actual* knobs rather than hard-coded defaults.
@@ -78,6 +79,7 @@ export function Recommendations() {
   return (
     <div className="space-y-4">
       <RegimeBanner regime={data?.regime} />
+      <SectionGuide id="recommendations" />
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="text-sm text-slate-400">
           {data?.generated_at

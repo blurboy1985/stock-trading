@@ -42,6 +42,7 @@ def combine(
     weights: dict[str, float] | None = None,
     regime_score: float | None = None,
     regime_hard_gate: float | None = None,
+    min_agreement: float = 0.0,
 ) -> dict[str, Any]:
     """Blend per-family results into a final decision dict.
 
@@ -53,6 +54,11 @@ def combine(
     preservation switch: in a tape at/below it, new BUYs are blocked outright
     (downgraded to HOLD) rather than merely dampened. Sells are never blocked.
     Price-derived, so the backtester replays it honestly.
+
+    ``min_agreement`` (in [0, 1]) is an entry-selectivity gate: a BUY only fires
+    when the weight-share of families voting *long* meets this floor, so a buy
+    backed by a lone signal is held back and only multi-signal confluence trades.
+    Sells are never gated (exits stay easy). Also price-derived / backtestable.
     """
     weights = {**DEFAULT_WEIGHTS, **(weights or {})}
 
@@ -97,6 +103,17 @@ def combine(
     else:
         action = "HOLD"
 
+    # Entry-selectivity gate: require multi-signal confluence to go long.
+    agreement_gated = False
+    if action == "BUY" and min_agreement > 0 and agreement < min_agreement:
+        action = "HOLD"
+        agreement_gated = True
+        reasons.insert(
+            0,
+            f"agreement gate: only {agreement:.0%} of weight votes long "
+            f"(need {min_agreement:.0%}) — low-confluence buy held back",
+        )
+
     # Hard regime gate: block *new* longs in a clearly risk-off tape.
     regime_gated = False
     if (
@@ -122,6 +139,7 @@ def combine(
         "regime_score": round(regime_score, 4) if regime_score is not None else None,
         "regime_multiplier": round(mult, 4),
         "regime_gated": regime_gated,
+        "agreement_gated": agreement_gated,
         "breakdown": breakdown,
         "reasons": reasons,
     }
@@ -138,6 +156,7 @@ def evaluate_symbol(
     regime_score: float | None = None,
     liquidity_warning: str | None = None,
     regime_hard_gate: float | None = None,
+    min_agreement: float = 0.0,
     sentiment_backend: str = "lexicon",
     sentiment_halflife_days: float = 3.0,
     sentiment_lm_weight: float = 0.5,
@@ -192,7 +211,7 @@ def evaluate_symbol(
 
     decision = combine(
         results, weights, regime_score=regime_score,
-        regime_hard_gate=regime_hard_gate,
+        regime_hard_gate=regime_hard_gate, min_agreement=min_agreement,
     )
     decision["symbol"] = symbol
     if len(bars):

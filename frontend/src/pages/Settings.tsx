@@ -4,6 +4,7 @@ import { api, type AppSettings } from "../api/client";
 import { Panel, Spinner, ErrorBanner, fmtPct } from "../components/ui";
 import { LimitationsPanel } from "../components/Disclosures";
 import { openTradeGuide } from "../components/TradeWalkthrough";
+import { SectionGuide } from "../components/SectionGuide";
 
 const SIGNALS = ["technical", "volatility", "momentum", "sentiment", "fundamentals"];
 
@@ -51,6 +52,8 @@ export function Settings() {
 
   return (
     <div className="space-y-5">
+      <SectionGuide id="settings" />
+
       {/* Broker / safety status */}
       <Panel title="Broker & Safety">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
@@ -396,7 +399,18 @@ export function Settings() {
             onChange={(v) => update("max_sector_exposure_pct", v)}
             max={1}
           />
+          <Slider
+            label="Min entry agreement"
+            value={draft.min_agreement ?? 0}
+            onChange={(v) => update("min_agreement", v)}
+            max={1}
+          />
         </div>
+        <p className="text-[11px] text-slate-500 mt-2">
+          Min entry agreement requires that share of the signal weight to vote
+          long before a buy fires — only multi-signal confluence trades. 0 = off;
+          higher = fewer, higher-conviction entries.
+        </p>
       </Panel>
 
       {/* Risk */}

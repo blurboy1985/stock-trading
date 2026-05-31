@@ -269,6 +269,7 @@ export interface AppSettings {
     auto_trade: boolean;
     buy_threshold: number;
     sell_threshold: number;
+    min_agreement?: number;
     regime_filter?: boolean;
     regime_hard_gate?: number;
     benchmark_symbol?: string;

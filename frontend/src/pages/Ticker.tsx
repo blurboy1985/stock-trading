@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { PriceChart } from "../components/PriceChart";
 import { Panel, Spinner, ErrorBanner, fmtUsd, fmtPct } from "../components/ui";
+import { SectionGuide } from "../components/SectionGuide";
 
 type RangeKey = "1M" | "3M" | "YTD" | "1Y" | "3Y" | "5Y" | "ALL";
 
@@ -90,6 +91,8 @@ export function Ticker() {
           </span>
         )}
       </div>
+
+      <SectionGuide id="ticker" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <Panel className="lg:col-span-2 !p-0 overflow-hidden">

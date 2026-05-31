@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, type Recommendation } from "../api/client";
 import { Panel, Spinner, ErrorBanner, fmtPct } from "../components/ui";
 import { RegimeBanner } from "../components/RegimeBanner";
+import { SectionGuide } from "../components/SectionGuide";
 
 export function Research() {
   const reco = useQuery({
@@ -29,6 +30,7 @@ export function Research() {
   return (
     <div className="space-y-5">
       <RegimeBanner regime={regime} />
+      <SectionGuide id="research" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <Panel title="Market Regime Detail" className="lg:col-span-1">

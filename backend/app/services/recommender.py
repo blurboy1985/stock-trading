@@ -193,6 +193,7 @@ def generate(persist: bool = True) -> dict[str, Any]:
                 momentum=mom_signals.get(sym),
                 regime_score=regime_score,
                 regime_hard_gate=cfg["regime_hard_gate"] if cfg["regime_filter"] else None,
+                min_agreement=cfg["min_agreement"],
                 liquidity_warning=None if ok else why,
                 sentiment_backend=cfg["sentiment_backend"],
                 sentiment_halflife_days=cfg["sentiment_halflife_days"],

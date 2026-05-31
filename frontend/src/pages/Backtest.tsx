@@ -9,6 +9,7 @@ import {
 import { EquityChart } from "../components/EquityChart";
 import { Heatmap, divergingColor, correlationColor } from "../components/Heatmap";
 import { Panel, Stat, Spinner, ErrorBanner, fmtUsd, fmtPct, fmtNum } from "../components/ui";
+import { SectionGuide } from "../components/SectionGuide";
 
 export function Backtest() {
   const [symbols, setSymbols] = useState("AAPL,MSFT,SPY");
@@ -18,6 +19,7 @@ export function Backtest() {
   const [takeProfit, setTakeProfit] = useState("0.15");
   const [atrStop, setAtrStop] = useState("0");
   const [trailAtr, setTrailAtr] = useState("0");
+  const [minAgree, setMinAgree] = useState("0");
   const [cash, setCash] = useState("100000");
   const [regimeFilter, setRegimeFilter] = useState(true);
   const [volSizing, setVolSizing] = useState(true);
@@ -31,6 +33,7 @@ export function Backtest() {
     take_profit_pct: takeProfit ? Number(takeProfit) : null,
     atr_stop_mult: atrStop ? Number(atrStop) : 0,
     trailing_atr_mult: trailAtr ? Number(trailAtr) : 0,
+    min_agreement: minAgree ? Number(minAgree) : 0,
     regime_filter: regimeFilter,
     use_vol_sizing: volSizing,
     benchmark_symbol: "SPY",
@@ -44,6 +47,7 @@ export function Backtest() {
 
   return (
     <div className="space-y-5">
+      <SectionGuide id="backtest" />
       <Panel title="Backtest Configuration">
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
           <Field label="Symbols" className="col-span-2">
@@ -66,6 +70,9 @@ export function Backtest() {
           </Field>
           <Field label="ATR trail ×">
             <input value={trailAtr} onChange={(e) => setTrailAtr(e.target.value)} className="inp" />
+          </Field>
+          <Field label="Min agreement">
+            <input value={minAgree} onChange={(e) => setMinAgree(e.target.value)} className="inp" />
           </Field>
         </div>
         <p className="text-[11px] text-slate-500 mt-2">

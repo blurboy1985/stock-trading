@@ -6,7 +6,11 @@ import { useNavigate } from "react-router-dom";
 // broker, that walks the user through the app's real buy/sell features. It only
 // references controls that actually exist (Recommendations row Buy, the Ticker
 // "Trade (paper)" panel, the Dashboard Open Positions Sell→Confirm, and Open
-// Orders Cancel) so the guidance never drifts from the UI.
+// Orders Cancel) so the guidance never drifts from the UI. It also explains the
+// swing-trading mechanics that shape what gets recommended and how exits work:
+// the price-only score with sentiment/fundamentals as a veto, the earnings /
+// regime / sector guardrails, and the ATR + trailing-stop exits (all tunable in
+// Settings and testable on the Backtest tab).
 //
 // Trigger it from anywhere with `openTradeGuide()`; it also auto-opens on the
 // first visit (tracked in localStorage).
@@ -44,23 +48,25 @@ const STEPS: Step[] = [
   {
     badge: "1 · Find an idea",
     title: "Start on Recommendations",
-    body: "This is your morning ranking. We scan the day's most-active US stocks — plus every name on your watchlist — and score each on a blend of technical, volatility, momentum, sentiment and fundamental signals, then sort by a risk-adjusted score. Green BUY badges are candidates to add; red SELL badges are names to lighten or avoid.",
+    body: "This is your morning ranking. We scan a universe of US stocks — plus every name on your watchlist — and score each on the price-derived signals that actually backtest: technical, volatility and momentum. News sentiment and fundamentals don't pad the score; by default they sit on the sidelines as a safety veto (more on that next). Everything is then sorted by a risk-adjusted score: green BUY badges are candidates to add, red SELL badges are names to lighten or avoid.",
     cues: [
       "A ★ marks your watchlist names; use the All / ★ Watchlist / Buys / Sells chips to filter.",
       "Read the row left-to-right: BUY/SELL/HOLD badge → score → conv (conviction) → vol → size (suggested weight) → price.",
       "Hit “Refresh now” to re-score against the latest prices.",
       "A ⚠ thin marker warns the name is illiquid — size down or skip.",
+      "Tip: in Settings → Universe you can scan the “Core liquid set” instead of the day's most-actives — a stable pond that makes relative-strength ranking far better for swing trading.",
     ],
     route: { to: "/recommendations", label: "Open Recommendations" },
   },
   {
     badge: "2 · Read the thesis",
     title: "Never buy a number you don't understand",
-    body: "Before committing capital, open the reasoning. Click the ▼ chevron on the right of any row to expand it. You'll see the plain-English “Why this score”, the agreement across signals, the suggested size, and a per-signal breakdown so you can see what's actually driving the call.",
+    body: "Before committing capital, open the reasoning. Click the ▼ chevron on the right of any row to expand it. You'll see the plain-English “Why this score”, the agreement across signals, the suggested size, and a per-signal breakdown so you can see what's actually driving the call. Sentiment and fundamentals show up here as context — and if either turns clearly negative, they can veto an otherwise-green buy.",
     cues: [
       "Expand the row with the ▼ on the far right.",
       "Low agreement or a single dominant signal = a thinner thesis; treat it with more caution.",
-      "“regime dampened” means the broad-market filter is throttling longs in a risk-off tape.",
+      "“regime dampened” means the broad-market filter is throttling longs in a risk-off tape; a hard “regime gate” can block new longs outright when the tape is clearly risk-off.",
+      "A buy can also be suppressed near earnings, when a sector is already full, or on a negative sentiment/fundamentals veto — the note tells you which.",
     ],
     route: { to: "/recommendations", label: "Open Recommendations" },
   },
@@ -80,12 +86,23 @@ const STEPS: Step[] = [
     cues: [
       "Quick buy: green “Buy” on the Recommendations row (caps at max position).",
       "Exact buy: Ticker → “Trade (paper)” → enter Qty → Buy. Blank Qty = auto-size.",
-      "Every order is risk-checked (position size, total exposure, stop-loss / take-profit) before it's sent.",
+      "Every order is risk-checked before it's sent: position size, total exposure, per-sector cap, earnings blackout, and the protective stop are all applied automatically.",
+      "If a guardrail blocks the order you'll see why — it's protecting you, not malfunctioning.",
       "You'll see “Order submitted ✓” on success.",
     ],
   },
   {
-    badge: "5 · Manage your book",
+    badge: "5 · Let it work",
+    title: "Your exit is half-automatic",
+    body: "When you buy, a protective stop rides along with the position so a single bad name can't run away from you. By default it's sized to the stock's own volatility (an ATR-based stop, not a flat percentage), so a quiet name gets a tight stop and a wild one gets room to breathe. You can also let the stop trail upward as the trade works — a chandelier trailing stop that locks in gains while letting winners run, instead of capping them at a fixed take-profit.",
+    cues: [
+      "The stop is attached at entry — you don't have to place it manually.",
+      "Tune it in Settings → Risk Limits: “ATR stop multiple” for the volatility-scaled stop, and the Backtest tab's “ATR trail ×” to test a trailing exit.",
+      "You can still exit by hand any time from the Dashboard (next step) — the stop is a backstop, not a cage.",
+    ],
+  },
+  {
+    badge: "6 · Manage your book",
     title: "Sell or close from the Dashboard",
     body: "Your open positions live on the Dashboard. To exit, find the position under “Open Positions” and use the Close column on the right. It's a deliberate two-step: the button reads “Sell”, and after you click it arms to “Confirm” — click again to sell the whole position at market. That second click is your safety catch against fat-fingering an exit.",
     cues: [
@@ -96,7 +113,7 @@ const STEPS: Step[] = [
     route: { to: "/", label: "Go to Dashboard" },
   },
   {
-    badge: "6 · Work your orders",
+    badge: "7 · Work your orders",
     title: "Cancel anything still working",
     body: "Orders that haven't filled show under “Open Orders” on the Dashboard, with their side, quantity, type and status. If a trade no longer makes sense, hit Cancel on its row — it drops from the list immediately and reconciles on the next refresh.",
     cues: [
@@ -108,9 +125,11 @@ const STEPS: Step[] = [
   {
     badge: "Before you risk anything",
     title: "Validate first — no screener beats the market",
-    body: "My honest broker's advice: treat every recommendation as a hypothesis, not a sure thing. Take a name you like to the Backtest tab and see how the strategy behaved historically before you lean on it. This whole app is paper-only by design so you can build conviction safely. Trade the process, not the tip.",
+    body: "My honest broker's advice: treat every recommendation as a hypothesis, not a sure thing. Take a name you like to the Backtest tab and see how the strategy behaved historically before you lean on it — and use it to settle your own settings, like whether an ATR trailing stop actually beats a fixed take-profit on the names you trade. This whole app is paper-only by design so you can build conviction safely. Trade the process, not the tip.",
     cues: [
-      "Backtests use price-derived signals only (sentiment & fundamentals are excluded to avoid look-ahead).",
+      "Backtests replay price-derived signals only (sentiment & fundamentals are excluded to avoid look-ahead), so what you test is what drives the live score.",
+      "Try “ATR trail ×” and “Min agreement” in the config, then Walk-forward / Parameter sweep to check the edge holds out-of-sample.",
+      "All these knobs — universe, veto mode, ATR stops, regime and sector gates — live in Settings once you've found what you like.",
       "Past backtested performance does not predict future results.",
     ],
     route: { to: "/backtest", label: "Open Backtest" },

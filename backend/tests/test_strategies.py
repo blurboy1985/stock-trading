@@ -92,6 +92,28 @@ def test_regime_hard_gate_blocks_new_longs():
     assert scoring.combine(bearish, regime_score=-0.9, regime_hard_gate=-0.5)["action"] == "SELL"
 
 
+def test_min_agreement_gate_blocks_low_confluence_buy():
+    # One strong family carries the composite over the buy line, but agreement
+    # (its lone weight-share) is below the gate, so the BUY is held back.
+    lone = {
+        "technical": SignalResult(score=0.9),
+        "volatility": SignalResult(score=-0.1),
+        "momentum": SignalResult(score=-0.1),
+    }
+    gated = scoring.combine(lone, min_agreement=0.6)
+    ungated = scoring.combine(lone, min_agreement=0.0)
+    assert ungated["action"] == "BUY"
+    assert gated["action"] == "HOLD"
+    assert gated["agreement_gated"] is True
+    # Full confluence clears the same gate.
+    allin = {
+        "technical": SignalResult(score=0.6),
+        "volatility": SignalResult(score=0.6),
+        "momentum": SignalResult(score=0.6),
+    }
+    assert scoring.combine(allin, min_agreement=0.6)["action"] == "BUY"
+
+
 def test_context_filter_veto_suppresses_buy(uptrend, monkeypatch):
     # In filter mode a strongly negative sentiment read vetoes a BUY but never
     # contributes to the score (weight 0). Force a bearish sentiment signal.

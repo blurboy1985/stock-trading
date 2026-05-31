@@ -16,6 +16,7 @@ import {
   fmtSignedPct,
 } from "../components/ui";
 import { RegimeBanner } from "../components/RegimeBanner";
+import { SectionGuide } from "../components/SectionGuide";
 
 const signClass = (n: number | null | undefined) =>
   n == null || n === 0 ? "text-slate-200" : n > 0 ? "text-buy" : "text-sell";
@@ -128,6 +129,7 @@ export function Dashboard() {
   return (
     <div className="space-y-5">
       <RegimeBanner regime={reco.data?.regime} />
+      <SectionGuide id="dashboard" />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">

@@ -31,6 +31,9 @@ DEFAULTS: dict[str, Any] = {
     "auto_trade": False,  # scheduler auto-proposes trades (user confirms) when true
     "buy_threshold": 0.25,
     "sell_threshold": -0.25,
+    # Entry-selectivity gate: require this weight-share of families to vote long
+    # before a BUY fires (multi-signal confluence). 0 disables. Backtestable.
+    "min_agreement": 0.0,
     # ── Quant controls ────────────────────────────────────────────────
     "regime_filter": True,           # dampen longs in a risk-off market
     # Hard gate: block *new* longs when the regime score is at/below this

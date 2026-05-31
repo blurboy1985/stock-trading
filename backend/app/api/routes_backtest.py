@@ -30,6 +30,7 @@ class BacktestRequest(BaseModel):
     atr_stop_mult: float = 0.0
     trailing_atr_mult: float = 0.0
     position_size_pct: float = 0.0
+    min_agreement: float = 0.0
     warmup: int = 50
     # ── Quant controls ────────────────────────────────────────────────
     regime_filter: bool = False
@@ -80,6 +81,7 @@ def _build_config(req: "BacktestRequest", **overrides) -> BacktestConfig:
         take_profit_pct=req.take_profit_pct,
         atr_stop_mult=req.atr_stop_mult,
         trailing_atr_mult=req.trailing_atr_mult,
+        min_agreement=req.min_agreement,
         position_size_pct=req.position_size_pct,
         warmup=req.warmup,
         regime_filter=req.regime_filter,

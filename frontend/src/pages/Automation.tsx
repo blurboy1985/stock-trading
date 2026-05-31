@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api, type Proposal } from "../api/client";
 import { Panel, Spinner, ActionBadge, fmtUsd, fmtPct } from "../components/ui";
+import { SectionGuide } from "../components/SectionGuide";
 
 type Banner = { kind: "ok" | "err"; text: string };
 
@@ -74,6 +75,7 @@ export function Automation() {
 
   return (
     <div className="space-y-4">
+      <SectionGuide id="automation" />
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="text-sm text-slate-400 max-w-2xl">
           Auto-propose scans the market every 15 min during market hours and drafts trades

@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { EquityChart } from "../components/EquityChart";
 import { Panel, Stat, Spinner, ErrorBanner, fmtUsd, fmtPct } from "../components/ui";
+import { SectionGuide } from "../components/SectionGuide";
 
 const PERIODS: { label: string; value: string }[] = [
   { label: "1M", value: "1M" },
@@ -36,6 +37,7 @@ export function History() {
 
   return (
     <div className="space-y-5">
+      <SectionGuide id="history" />
       <div className="flex items-center justify-between">
         <div className="text-sm text-slate-400">
           Account performance &amp; trade history — read live from your Alpaca account.
