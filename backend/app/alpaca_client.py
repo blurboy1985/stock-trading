@@ -201,6 +201,23 @@ def get_latest_quote(symbol: str) -> dict[str, Any]:
     }
 
 
+def get_latest_trade_price(symbol: str) -> float | None:
+    """Last traded price for a symbol, or ``None`` if unavailable.
+
+    This is the closest proxy to the ``base_price`` Alpaca uses to validate a
+    bracket order's child legs, so it's the right reference for clamping the
+    take-profit / stop-loss at submit time.
+    """
+    try:
+        from alpaca.data.requests import StockLatestTradeRequest
+
+        req = StockLatestTradeRequest(symbol_or_symbols=symbol)
+        t = _data_client().get_stock_latest_trade(req)[symbol]
+        return float(t.price or 0) or None
+    except Exception:  # noqa: BLE001 — best-effort reference price
+        return None
+
+
 def get_news(
     symbols: list[str], limit: int = 20, include_external: bool = False
 ) -> list[dict[str, Any]]:
@@ -405,6 +422,40 @@ def get_positions() -> list[dict[str, Any]]:
     return out
 
 
+def _clamp_bracket_for_buy(
+    symbol: str,
+    side: str,
+    stop_loss: float | None,
+    take_profit: float | None,
+) -> tuple[float | None, float | None]:
+    """Keep a long bracket's child legs valid against the live reference price.
+
+    Alpaca rejects a buy bracket whose take-profit isn't strictly above, or
+    stop-loss strictly below, the order's ``base_price`` (the latest trade). A
+    stale or one-sided quote at sizing time can leave a leg on the wrong side;
+    here we re-anchor each offending leg to a fresh reference with a small
+    buffer, leaving well-formed legs untouched. Sells (plain exits) pass through.
+    """
+    if side.lower() != "buy" or not (stop_loss or take_profit):
+        return stop_loss, take_profit
+
+    ref = get_latest_trade_price(symbol)
+    if not ref:
+        ref = get_latest_quote(symbol).get("mid") or 0.0
+    if ref <= 0:
+        return stop_loss, take_profit  # no usable reference; submit as-is
+
+    buffer = max(0.01, round(ref * 0.002, 2))  # 0.2% of price, min 1 cent
+    if take_profit is not None:
+        # Only raises it when the computed target is (wrongly) below the market.
+        take_profit = max(float(take_profit), round(ref + buffer, 2))
+    if stop_loss is not None:
+        stop_loss = min(float(stop_loss), round(ref - buffer, 2))
+        if stop_loss <= 0:
+            stop_loss = round(ref * 0.5, 2)
+    return stop_loss, take_profit
+
+
 def submit_order(
     symbol: str,
     qty: float,
@@ -428,6 +479,14 @@ def submit_order(
 
     side_enum = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
     bracket = stop_loss is not None or take_profit is not None
+    if bracket:
+        # Re-anchor the bracket legs to a fresh reference price so a stale quote
+        # at sizing time can't push a leg to the wrong side of Alpaca's
+        # base_price (which would reject the whole order).
+        stop_loss, take_profit = _clamp_bracket_for_buy(
+            symbol, side, stop_loss, take_profit
+        )
+        bracket = stop_loss is not None or take_profit is not None
     common: dict[str, Any] = {
         "symbol": symbol,
         "qty": qty,
