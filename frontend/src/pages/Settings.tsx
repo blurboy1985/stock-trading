@@ -105,12 +105,16 @@ export function Settings() {
               <option value="most_active">
                 Most-active US stocks (broad daily scan)
               </option>
+              <option value="core_liquid">
+                Core liquid set (stable ~120 large/mid-caps) — best for swing RS
+              </option>
               <option value="watchlist">My watchlist only (faster)</option>
             </select>
             <span className="text-[11px] text-slate-500">
-              Broad scan ranks the day's most-active names plus your watchlist
-              (★). Watchlist-only is the fast path. Falls back to watchlist if
-              the screener is unavailable.
+              Most-active is recency-biased (today's churn). The core liquid set
+              ranks a <em>stable</em> pond by relative strength, so momentum
+              leaders persist — recommended for swing trading. All sources always
+              include your watchlist (★).
             </span>
           </label>
           <NumField
@@ -145,12 +149,43 @@ export function Settings() {
         </div>
         <p className="text-xs text-slate-500 mt-2">
           Weights are auto-normalized across active signals at scoring time.
-          (Sentiment & fundamentals are skipped in backtests.)
+          Sentiment & fundamentals are skipped in backtests, and in the default
+          veto-only mode they carry no weight here (see Sentiment & Fundamentals).
         </p>
       </Panel>
 
       {/* Sentiment & fundamentals tuning */}
       <Panel title="Sentiment & Fundamentals">
+        <label className="block mb-4">
+          <span className="text-xs text-slate-400">How they're used</span>
+          <select
+            value={draft.context_signal_mode ?? "filter"}
+            onChange={(e) => update("context_signal_mode", e.target.value)}
+            className="inp"
+          >
+            <option value="filter">
+              Veto only (recommended) — keep them out of the score, block clearly
+              negative buys
+            </option>
+            <option value="blend">Blend into the weighted score (legacy)</option>
+          </select>
+          <span className="text-[11px] text-slate-500">
+            Sentiment & fundamentals have no point-in-time history, so they can't
+            be backtested. Veto-only keeps the return-driving score on the{" "}
+            <em>validated</em> price signals and uses these only to suppress a buy
+            when clearly negative — closing the live-vs-backtest gap.
+          </span>
+        </label>
+        {draft.context_signal_mode !== "blend" && (
+          <div className="mb-4 max-w-xs">
+            <NumField
+              label="Veto threshold (|score| below −this blocks a buy)"
+              value={draft.context_veto_threshold ?? 0.4}
+              step={0.05}
+              onChange={(v) => update("context_veto_threshold", v)}
+            />
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label className="block">
             <span className="text-xs text-slate-400">Sentiment engine</span>
@@ -330,6 +365,37 @@ export function Settings() {
             step={1}
             onChange={(v) => update("min_price", v)}
           />
+          <label className="block">
+            <NumField
+              label="Regime hard gate (block new longs ≤)"
+              value={draft.regime_hard_gate ?? -0.5}
+              step={0.1}
+              onChange={(v) => update("regime_hard_gate", v)}
+            />
+            <span className="text-[11px] text-slate-500">
+              Regime score runs −1…+1. New longs are blocked outright when it's
+              at/below this (capital preservation in a clearly risk-off tape).
+              Set −1 to effectively disable.
+            </span>
+          </label>
+          <label className="block">
+            <NumField
+              label="Earnings blackout (days)"
+              value={draft.earnings_blackout_days ?? 5}
+              step={1}
+              onChange={(v) => update("earnings_blackout_days", Math.round(v))}
+            />
+            <span className="text-[11px] text-slate-500">
+              Suppress new buys within N days of the next earnings report (gap
+              risk). 0 disables.
+            </span>
+          </label>
+          <Slider
+            label="Max sector exposure"
+            value={draft.max_sector_exposure_pct ?? 0.4}
+            onChange={(v) => update("max_sector_exposure_pct", v)}
+            max={1}
+          />
         </div>
       </Panel>
 
@@ -359,7 +425,25 @@ export function Settings() {
             onChange={(v) => update("take_profit_pct", v)}
             max={0.5}
           />
+          <label className="block">
+            <NumField
+              label="ATR stop multiple"
+              value={draft.atr_stop_mult ?? 0}
+              step={0.5}
+              onChange={(v) => update("atr_stop_mult", v)}
+            />
+            <span className="text-[11px] text-slate-500">
+              When &gt; 0, the stop is placed this many ATRs below entry
+              (volatility-scaled, adapts per name) — overrides the flat stop %.
+              Backtests favor ~2.5–3×. 0 keeps the flat % stop.
+            </span>
+          </label>
         </div>
+        <p className="text-[11px] text-slate-500 mt-2">
+          A volatility-scaled stop sizes risk consistently across quiet and wild
+          names. An ATR trailing stop (lets winners run) is available in the
+          Backtest tab and applies to live brackets via the broker.
+        </p>
       </Panel>
 
       <div className="flex items-center gap-3">

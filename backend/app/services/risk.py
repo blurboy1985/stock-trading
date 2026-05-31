@@ -76,12 +76,27 @@ def size_position_vol_target(
 
 
 def compute_bracket(
-    price: float, side: str, stop_loss_pct: float, take_profit_pct: float
+    price: float,
+    side: str,
+    stop_loss_pct: float,
+    take_profit_pct: float,
+    atr: float | None = None,
+    atr_stop_mult: float = 0.0,
 ) -> tuple[float | None, float | None]:
-    """Stop/target prices for a bracket order (long side)."""
+    """Stop/target prices for a bracket order (long side).
+
+    When ``atr_stop_mult`` > 0 and an ``atr`` (in price terms) is supplied, the
+    stop is placed ``atr_stop_mult`` ATRs below the fill — a volatility-scaled
+    stop that adapts to each name — overriding the flat ``stop_loss_pct``.
+    """
     if side.lower() != "buy":
         return None, None  # exits are plain orders
-    stop = round(price * (1 - stop_loss_pct), 2) if stop_loss_pct else None
+    if atr_stop_mult and atr and atr > 0:
+        stop = round(price - atr_stop_mult * atr, 2)
+    elif stop_loss_pct:
+        stop = round(price * (1 - stop_loss_pct), 2)
+    else:
+        stop = None
     target = round(price * (1 + take_profit_pct), 2) if take_profit_pct else None
     return stop, target
 
@@ -93,8 +108,13 @@ def validate_order(
     side: str,
     qty: float,
     price: float,
+    atr: float | None = None,
 ) -> RiskDecision:
-    """Gate a proposed order against current risk limits."""
+    """Gate a proposed order against current risk limits.
+
+    ``atr`` (in price terms), when supplied alongside a configured
+    ``atr_stop_mult``, yields a volatility-scaled stop instead of the flat %.
+    """
     cfg = runtime_settings.get_all()
     equity = float(account.get("equity", 0)) or 1.0
     side = side.lower()
@@ -143,7 +163,33 @@ def validate_order(
             ),
         )
 
+    # Sector concentration cap: per-position vol sizing controls single-name
+    # risk but says nothing about buying six 0.9-correlated names in one sector.
+    # Best-effort — skipped when the candidate's sector can't be resolved from
+    # the (cache-only) lookup, so it never blocks on missing data.
+    sector_cap = cfg.get("max_sector_exposure_pct", 0.0)
+    if sector_cap:
+        from ..strategies.fundamentals import cached_sector
+
+        sector = cached_sector(symbol)
+        if sector:
+            same_sector = sum(
+                float(p["market_value"])
+                for p in positions
+                if cached_sector(p["symbol"]) == sector
+            )
+            sector_pct = (same_sector + order_value) / equity
+            if sector_pct > sector_cap + 1e-9:
+                return RiskDecision(
+                    ok=False,
+                    reason=(
+                        f"{sector} exposure would be {sector_pct:.0%} "
+                        f"(max {sector_cap:.0%})"
+                    ),
+                )
+
     stop, target = compute_bracket(
-        price, side, cfg["stop_loss_pct"], cfg["take_profit_pct"]
+        price, side, cfg["stop_loss_pct"], cfg["take_profit_pct"],
+        atr=atr, atr_stop_mult=cfg.get("atr_stop_mult", 0.0),
     )
     return RiskDecision(ok=True, qty=qty, stop_loss=stop, take_profit=target)

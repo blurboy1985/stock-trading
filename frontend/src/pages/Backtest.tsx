@@ -16,6 +16,8 @@ export function Backtest() {
   const [end, setEnd] = useState("2024-12-31");
   const [stopLoss, setStopLoss] = useState("0.05");
   const [takeProfit, setTakeProfit] = useState("0.15");
+  const [atrStop, setAtrStop] = useState("0");
+  const [trailAtr, setTrailAtr] = useState("0");
   const [cash, setCash] = useState("100000");
   const [regimeFilter, setRegimeFilter] = useState(true);
   const [volSizing, setVolSizing] = useState(true);
@@ -27,6 +29,8 @@ export function Backtest() {
     starting_cash: Number(cash),
     stop_loss_pct: stopLoss ? Number(stopLoss) : null,
     take_profit_pct: takeProfit ? Number(takeProfit) : null,
+    atr_stop_mult: atrStop ? Number(atrStop) : 0,
+    trailing_atr_mult: trailAtr ? Number(trailAtr) : 0,
     regime_filter: regimeFilter,
     use_vol_sizing: volSizing,
     benchmark_symbol: "SPY",
@@ -57,7 +61,19 @@ export function Backtest() {
           <Field label="Take profit">
             <input value={takeProfit} onChange={(e) => setTakeProfit(e.target.value)} className="inp" />
           </Field>
+          <Field label="ATR stop ×">
+            <input value={atrStop} onChange={(e) => setAtrStop(e.target.value)} className="inp" />
+          </Field>
+          <Field label="ATR trail ×">
+            <input value={trailAtr} onChange={(e) => setTrailAtr(e.target.value)} className="inp" />
+          </Field>
         </div>
+        <p className="text-[11px] text-slate-500 mt-2">
+          ATR stop × places the stop that many ATRs below entry (overrides the
+          flat stop). ATR trail × ratchets a chandelier trailing stop off the
+          highest close since entry — set it &gt; 0 and clear take-profit to let
+          winners run. 0 = off.
+        </p>
         <div className="flex flex-wrap items-center gap-4 mt-3">
           <Field label="Starting cash">
             <input value={cash} onChange={(e) => setCash(e.target.value)} className="inp w-40" />

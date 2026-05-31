@@ -15,6 +15,7 @@ from typing import Any
 import pandas as pd
 
 from .base import SignalResult, clamp
+from .earnings import earnings_blackout
 from .fundamentals import fundamentals_signal
 from .indicators import technical_signal
 from .regime import regime_multiplier
@@ -40,12 +41,18 @@ def combine(
     results: dict[str, SignalResult],
     weights: dict[str, float] | None = None,
     regime_score: float | None = None,
+    regime_hard_gate: float | None = None,
 ) -> dict[str, Any]:
     """Blend per-family results into a final decision dict.
 
     ``regime_score`` (in [-1, 1]), when supplied, scales the *positive* part of
     the composite via :func:`regime_multiplier` so longs are throttled in a
     risk-off tape; sells are never dampened.
+
+    ``regime_hard_gate`` (in [-1, 1]), when supplied, is a hard capital-
+    preservation switch: in a tape at/below it, new BUYs are blocked outright
+    (downgraded to HOLD) rather than merely dampened. Sells are never blocked.
+    Price-derived, so the backtester replays it honestly.
     """
     weights = {**DEFAULT_WEIGHTS, **(weights or {})}
 
@@ -90,6 +97,22 @@ def combine(
     else:
         action = "HOLD"
 
+    # Hard regime gate: block *new* longs in a clearly risk-off tape.
+    regime_gated = False
+    if (
+        action == "BUY"
+        and regime_score is not None
+        and regime_hard_gate is not None
+        and regime_score <= regime_hard_gate
+    ):
+        action = "HOLD"
+        regime_gated = True
+        reasons.insert(
+            0,
+            f"regime gate: risk-off ({regime_score:+.2f} ≤ {regime_hard_gate:+.2f}) "
+            "— new longs blocked",
+        )
+
     return {
         "action": action,
         "score": round(composite, 4),
@@ -98,6 +121,7 @@ def combine(
         "agreement": round(agreement, 4),
         "regime_score": round(regime_score, 4) if regime_score is not None else None,
         "regime_multiplier": round(mult, 4),
+        "regime_gated": regime_gated,
         "breakdown": breakdown,
         "reasons": reasons,
     }
@@ -113,12 +137,16 @@ def evaluate_symbol(
     momentum: SignalResult | None = None,
     regime_score: float | None = None,
     liquidity_warning: str | None = None,
+    regime_hard_gate: float | None = None,
     sentiment_backend: str = "lexicon",
     sentiment_halflife_days: float = 3.0,
     sentiment_lm_weight: float = 0.5,
     sentiment_llm_model: str | None = None,
     sector_baseline: dict[str, float] | None = None,
     info: dict[str, Any] | None = None,
+    earnings_blackout_days: int = 0,
+    context_mode: str = "blend",
+    context_veto_threshold: float = 0.4,
 ) -> dict[str, Any]:
     """Run every enabled signal on a symbol and return the combined decision.
 
@@ -129,6 +157,13 @@ def evaluate_symbol(
     ``info`` feed sector-relative fundamentals; the ``sentiment_*`` knobs tune
     the news signal (and select the optional LLM backend).
     Sentiment/fundamentals can be disabled (e.g. in fast backtests).
+
+    ``context_mode`` controls how sentiment & fundamentals are used. ``"blend"``
+    folds them into the weighted composite (legacy). ``"filter"`` keeps them out
+    of the score — so the return-driving decision is the price stack the
+    backtester actually validates — and instead uses them only as a *veto*: a
+    BUY is downgraded to HOLD when either reads below ``-context_veto_threshold``.
+    They stay in the breakdown (weight 0 in filter mode) so the UI still shows them.
     """
     results: dict[str, SignalResult] = {
         "technical": technical_signal(bars),
@@ -149,7 +184,16 @@ def evaluate_symbol(
             symbol, sector_baseline=sector_baseline, info=info
         )
 
-    decision = combine(results, weights, regime_score=regime_score)
+    # In filter mode the context signals carry zero weight (they don't move the
+    # composite) but remain in the breakdown for display; their veto is applied
+    # below. Backtests pass neither signal, so this is a no-op there.
+    if context_mode == "filter":
+        weights = {**(weights or {}), "sentiment": 0.0, "fundamentals": 0.0}
+
+    decision = combine(
+        results, weights, regime_score=regime_score,
+        regime_hard_gate=regime_hard_gate,
+    )
     decision["symbol"] = symbol
     if len(bars):
         decision["price"] = round(float(bars["close"].iloc[-1]), 4)
@@ -165,6 +209,32 @@ def evaluate_symbol(
             decision["action"] = "HOLD"
             decision["reasons"] = [
                 f"liquidity: {liquidity_warning} (buy suppressed)",
+                *decision["reasons"],
+            ]
+
+    # Earnings blackout: don't *enter* into an imminent report (gap risk). Held
+    # names get a flag (surfaced to the user / exit logic) but aren't force-sold
+    # here — that stays a user/risk decision.
+    in_blackout, why = earnings_blackout(info, earnings_blackout_days)
+    if in_blackout:
+        decision["earnings_warning"] = why
+        if decision["action"] == "BUY":
+            decision["action"] = "HOLD"
+            decision["reasons"] = [f"{why} (buy suppressed)", *decision["reasons"]]
+
+    # Context veto (filter mode): a clearly negative sentiment/fundamentals read
+    # blocks a new long, but never manufactures a buy on its own.
+    if context_mode == "filter":
+        vetoes = [
+            name
+            for name in ("sentiment", "fundamentals")
+            if name in results and results[name].score <= -context_veto_threshold
+        ]
+        if vetoes and decision["action"] == "BUY":
+            decision["action"] = "HOLD"
+            decision["context_veto"] = vetoes
+            decision["reasons"] = [
+                f"context veto: weak {', '.join(vetoes)} (buy suppressed)",
                 *decision["reasons"],
             ]
     return decision

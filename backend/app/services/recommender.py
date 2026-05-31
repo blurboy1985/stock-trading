@@ -44,29 +44,42 @@ def get_universe() -> list[str]:
 def build_universe(cfg: dict[str, Any]) -> tuple[list[str], set[str]]:
     """Compose the set of symbols to score this cycle and the watchlist subset.
 
-    With ``universe_source == "most_active"`` (the default) the universe is the
-    day's most-active US stocks, *always* unioned with the full watchlist and the
+    Sources (``universe_source``):
+
+    * ``"most_active"`` (legacy) — the day's most-active US stocks.
+    * ``"core_liquid"`` — a curated, *stable* liquid large/mid-cap set so the
+      cross-sectional momentum rank surfaces relative-strength leaders from a
+      persistent pond rather than today's churn (recommended for swing trading).
+    * ``"watchlist"`` — only the watchlist + benchmark.
+
+    The chosen source is *always* unioned with the full watchlist and the
     benchmark (so those are scored + starred and the regime/RS baselines stay
     anchored), deduped and capped at ``universe_size``. Falls back to a
-    watchlist-only universe when the source is set to ``"watchlist"`` or the
-    screener is unavailable. Returns ``(universe, watchlist_set)``.
+    watchlist-only universe when the screener is unavailable. Returns
+    ``(universe, watchlist_set)``.
     """
     watchlist = [s.upper() for s in get_universe()]
     wl_set = set(watchlist)
     bench = (cfg.get("benchmark_symbol") or "SPY").upper()
     # Watchlist + benchmark are mandatory members, in that order.
     must = list(dict.fromkeys([*watchlist, bench]))
-
-    if cfg.get("universe_source", "most_active") != "most_active":
-        return must, wl_set
-
+    source = cfg.get("universe_source", "most_active")
     size = int(cfg.get("universe_size", 75))
-    movers = [m.upper() for m in ac.get_most_actives(top=size)]
-    if not movers:  # screener outage → watchlist-only (current behavior)
+
+    if source == "watchlist":
         return must, wl_set
+
+    if source == "core_liquid":
+        from ..strategies.data.universe import CORE_LIQUID_UNIVERSE
+
+        candidates = [c.upper() for c in CORE_LIQUID_UNIVERSE]
+    else:  # "most_active" (default)
+        candidates = [m.upper() for m in ac.get_most_actives(top=size)]
+        if not candidates:  # screener outage → watchlist-only (current behavior)
+            return must, wl_set
 
     must_set = set(must)
-    extra = [m for m in dict.fromkeys(movers) if m not in must_set]
+    extra = [c for c in dict.fromkeys(candidates) if c not in must_set]
     room = max(0, size - len(must))
     return must + extra[:room], wl_set
 
@@ -179,12 +192,16 @@ def generate(persist: bool = True) -> dict[str, Any]:
                 weights=weights,
                 momentum=mom_signals.get(sym),
                 regime_score=regime_score,
+                regime_hard_gate=cfg["regime_hard_gate"] if cfg["regime_filter"] else None,
                 liquidity_warning=None if ok else why,
                 sentiment_backend=cfg["sentiment_backend"],
                 sentiment_halflife_days=cfg["sentiment_halflife_days"],
                 sentiment_lm_weight=cfg["sentiment_lm_weight"],
                 sector_baseline=sector_baseline,
                 info=info,
+                earnings_blackout_days=cfg["earnings_blackout_days"],
+                context_mode=cfg["context_signal_mode"],
+                context_veto_threshold=cfg["context_veto_threshold"],
             )
             decision["in_watchlist"] = sym in watchlist_set
             _enrich(decision, regime, cfg, equity)

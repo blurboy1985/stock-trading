@@ -74,6 +74,52 @@ def test_combine_renormalizes_and_thresholds():
     assert neutral["action"] == "HOLD"
 
 
+def test_regime_hard_gate_blocks_new_longs():
+    bullish = {
+        "technical": SignalResult(score=0.8),
+        "volatility": SignalResult(score=0.6),
+    }
+    # Risk-off tape below the gate: a would-be BUY is blocked, not just dampened.
+    gated = scoring.combine(bullish, regime_score=-0.7, regime_hard_gate=-0.5)
+    assert gated["action"] == "HOLD"
+    assert gated["regime_gated"] is True
+    # Above the gate the same signals still buy.
+    ok = scoring.combine(bullish, regime_score=-0.3, regime_hard_gate=-0.5)
+    assert ok["action"] == "BUY"
+    assert ok["regime_gated"] is False
+    # A SELL is never blocked by the gate.
+    bearish = {"technical": SignalResult(score=-0.8)}
+    assert scoring.combine(bearish, regime_score=-0.9, regime_hard_gate=-0.5)["action"] == "SELL"
+
+
+def test_context_filter_veto_suppresses_buy(uptrend, monkeypatch):
+    # In filter mode a strongly negative sentiment read vetoes a BUY but never
+    # contributes to the score (weight 0). Force a bearish sentiment signal.
+    monkeypatch.setattr(
+        scoring, "score_headlines", lambda *a, **k: SignalResult(score=-0.9, reasons=["bad news"])
+    )
+    out = scoring.evaluate_symbol(
+        "TEST", uptrend, news=[{"headline": "x"}],
+        include_fundamentals=False, include_sentiment=True,
+        context_mode="filter", context_veto_threshold=0.4,
+    )
+    assert out["action"] == "HOLD"
+    assert out.get("context_veto") == ["sentiment"]
+    # Sentiment is shown but carries zero weight in the composite.
+    assert out["breakdown"]["sentiment"]["weight"] == 0.0
+
+
+def test_earnings_blackout_suppresses_buy(uptrend):
+    soon = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=2)
+    info = {"earningsTimestamp": soon.timestamp()}
+    out = scoring.evaluate_symbol(
+        "TEST", uptrend, news=[], include_fundamentals=False, include_sentiment=False,
+        info=info, earnings_blackout_days=5,
+    )
+    assert out["action"] == "HOLD"
+    assert "earnings" in out.get("earnings_warning", "")
+
+
 def test_evaluate_symbol_without_external_calls(uptrend):
     # Disable sentiment/fundamentals to avoid network in unit tests.
     out = scoring.evaluate_symbol(

@@ -142,8 +142,12 @@ def _make(
     reasons = d.get("reasons") or []
 
     # Dry-run the same risk gate confirm/place_order will enforce, so the user
-    # sees up front whether (and why) a trade can't go through.
-    decision = risk.validate_order(account, positions, symbol, side, qty, price)
+    # sees up front whether (and why) a trade can't go through. Pass ATR (in
+    # price terms) so a configured ATR stop is volatility-scaled per name.
+    atr_dollars = (atr_pct * price) if (atr_pct and price) else None
+    decision = risk.validate_order(
+        account, positions, symbol, side, qty, price, atr=atr_dollars
+    )
     blocked = None if decision.ok else decision.reason
 
     row = TradeProposal(

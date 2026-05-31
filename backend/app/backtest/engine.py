@@ -46,8 +46,17 @@ class BacktestConfig:
     take_profit_pct: float | None = None
     buy_threshold: float = 0.25
     sell_threshold: float = -0.25
+    # ── ATR-based exits ───────────────────────────────────────────────
+    # When >0 the initial stop is placed ``atr_stop_mult`` ATRs below the
+    # fill (volatility-scaled), overriding the flat ``stop_loss_pct``.
+    atr_stop_mult: float = 0.0
+    # When >0 a chandelier-style trailing stop ratchets up to
+    # ``trailing_atr_mult`` ATRs below the highest close seen since entry, so
+    # winners run instead of being capped by a fixed take-profit.
+    trailing_atr_mult: float = 0.0
     # ── Quant controls (mirror runtime_settings) ──────────────────────
     regime_filter: bool = False
+    regime_hard_gate: float | None = None  # block new longs when score <= this
     benchmark_symbol: str | None = None
     use_vol_sizing: bool = False
     target_risk_pct: float = 0.0025
@@ -65,6 +74,8 @@ class _Position:
     driver: str = "—"
     stop: float | None = None
     target: float | None = None
+    atr: float = 0.0  # ATR in price terms at entry (for ATR/trailing stops)
+    highest_close: float = 0.0  # peak close since entry, for the trailing stop
 
 
 @dataclass
@@ -99,15 +110,23 @@ def _evaluate(
     weights: dict[str, float] | None,
     momentum=None,
     regime_score: float | None = None,
+    regime_hard_gate: float | None = None,
 ) -> dict[str, Any]:
     """Technical + volatility + (cross-sectional) momentum on the closed window."""
+    vol = volatility_signal(window)
     results = {
         "technical": technical_signal(window),
-        "volatility": volatility_signal(window),
+        "volatility": vol,
     }
     if momentum is not None:
         results["momentum"] = momentum
-    return combine(results, weights, regime_score=regime_score)
+    decision = combine(
+        results, weights, regime_score=regime_score,
+        regime_hard_gate=regime_hard_gate,
+    )
+    # Surface ATR (in price terms) for volatility-scaled / trailing stops.
+    decision["atr"] = vol.metrics.get("atr")
+    return decision
 
 
 def run_backtest(
@@ -145,7 +164,10 @@ def run_backtest(
             exit_price = None
             reason = None
             if pos.stop is not None and bar["low"] <= pos.stop:
-                exit_price, reason = pos.stop, "stop_loss"
+                # A stop that has ratcheted to/above entry is a trailing exit.
+                trailed = config.trailing_atr_mult and pos.stop >= pos.entry_price
+                exit_price = pos.stop
+                reason = "trailing_stop" if trailed else "stop_loss"
             elif pos.target is not None and bar["high"] >= pos.target:
                 exit_price, reason = pos.target, "take_profit"
             if exit_price is not None:
@@ -176,7 +198,8 @@ def run_backtest(
             if pd.isna(bar["open"]):
                 continue
             decision = _evaluate(
-                window, config.weights, mom_signals.get(sym), regime_score
+                window, config.weights, mom_signals.get(sym), regime_score,
+                config.regime_hard_gate,
             )
             score = decision["score"]
             open_px = float(bar["open"])
@@ -198,7 +221,14 @@ def run_backtest(
                 if qty > 0 and state.cash >= qty * fill + config.commission:
                     state.cash -= qty * fill + config.commission
                     state.buy_notional += qty * fill
-                    stop = fill * (1 - config.stop_loss_pct) if config.stop_loss_pct else None
+                    atr_dollars = decision.get("atr") or 0.0
+                    # Volatility-scaled initial stop when configured, else flat %.
+                    if config.atr_stop_mult and atr_dollars > 0:
+                        stop = fill - config.atr_stop_mult * atr_dollars
+                    elif config.stop_loss_pct:
+                        stop = fill * (1 - config.stop_loss_pct)
+                    else:
+                        stop = None
                     target = (
                         fill * (1 + config.take_profit_pct)
                         if config.take_profit_pct
@@ -207,10 +237,26 @@ def run_backtest(
                     state.positions[sym] = _Position(
                         qty=qty, entry_price=fill, entry_date=date_str, entry_i=i,
                         driver=_driver(decision["breakdown"]), stop=stop, target=target,
+                        atr=atr_dollars, highest_close=fill,
                     )
             elif holding and score <= config.sell_threshold:
                 fill = _slip(open_px, config.slippage_bps, "sell")
                 _close(state, sym, fill, date_str, i, config, "signal")
+
+        # 3b) Ratchet ATR trailing stops off this bar's close. The updated stop
+        #     only takes effect from the *next* bar (it's checked intrabar at the
+        #     top of the loop), so using this close introduces no look-ahead.
+        if config.trailing_atr_mult:
+            for sym, pos in state.positions.items():
+                close_i = aligned[sym].iloc[i]["close"]
+                if pd.isna(close_i):
+                    continue
+                close_i = float(close_i)
+                if close_i > pos.highest_close:
+                    pos.highest_close = close_i
+                if pos.atr > 0:
+                    trail = pos.highest_close - config.trailing_atr_mult * pos.atr
+                    pos.stop = trail if pos.stop is None else max(pos.stop, trail)
 
         # 4) Mark-to-market equity at this bar's close.
         if state.positions:

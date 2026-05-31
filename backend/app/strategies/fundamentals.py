@@ -216,6 +216,17 @@ def get_info(symbol: str) -> dict[str, Any]:
     return info
 
 
+def cached_sector(symbol: str) -> str | None:
+    """The symbol's GICS sector from the info cache, or ``None`` (no fetch).
+
+    Cache-only on purpose: callers on the hot risk path must never trigger a
+    network round-trip. During a scoring cycle the recommender warms this cache
+    for the whole universe, so held names are typically resolvable.
+    """
+    cached = _INFO_CACHE.get(symbol)
+    return cached[1].get("sector") if cached and cached[1] else None
+
+
 def build_sector_baselines(
     infos_by_symbol: dict[str, dict[str, Any]], min_peers: int = 3
 ) -> dict[str, dict[str, float]]:

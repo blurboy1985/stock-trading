@@ -27,10 +27,13 @@ class BacktestRequest(BaseModel):
     slippage_bps: float = 5.0
     stop_loss_pct: float | None = None
     take_profit_pct: float | None = None
+    atr_stop_mult: float = 0.0
+    trailing_atr_mult: float = 0.0
     position_size_pct: float = 0.0
     warmup: int = 50
     # ── Quant controls ────────────────────────────────────────────────
     regime_filter: bool = False
+    regime_hard_gate: float | None = None
     benchmark_symbol: str = "SPY"
     use_vol_sizing: bool = False
     target_risk_pct: float = 0.0025
@@ -75,9 +78,12 @@ def _build_config(req: "BacktestRequest", **overrides) -> BacktestConfig:
         slippage_bps=req.slippage_bps,
         stop_loss_pct=req.stop_loss_pct,
         take_profit_pct=req.take_profit_pct,
+        atr_stop_mult=req.atr_stop_mult,
+        trailing_atr_mult=req.trailing_atr_mult,
         position_size_pct=req.position_size_pct,
         warmup=req.warmup,
         regime_filter=req.regime_filter,
+        regime_hard_gate=req.regime_hard_gate,
         benchmark_symbol=req.benchmark_symbol.upper(),
         use_vol_sizing=req.use_vol_sizing,
         target_risk_pct=req.target_risk_pct,

@@ -56,6 +56,37 @@ def test_stop_loss_caps_losses():
         assert -0.08 < t["return_pct"] < 0
 
 
+def test_atr_trailing_stop_lets_winners_run_then_locks_in():
+    # Strong uptrend (builds + holds a position), then a sharp reversal. A
+    # chandelier ATR trailing stop should exit on the reversal at a price well
+    # above entry — i.e. lock in trend profit rather than ride it back down.
+    up = np.linspace(100, 200, 160)
+    down = np.linspace(200, 150, 40)
+    bars = _make_bars(np.concatenate([up, down]))
+    res = run_backtest(
+        {"TEST": bars},
+        BacktestConfig(warmup=50, atr_stop_mult=3.0, trailing_atr_mult=3.0),
+    )
+    trail = [t for t in res["trades"] if t["exit_reason"] == "trailing_stop"]
+    assert len(trail) >= 1
+    # The trailing exit banks a gain (stop ratcheted above entry before firing).
+    for t in trail:
+        assert t["return_pct"] > 0
+
+
+def test_atr_stop_caps_initial_loss():
+    # Without a fixed stop_loss_pct, an ATR stop must still bound a losing trade.
+    up = np.linspace(100, 140, 100)
+    after = np.full(60, 108.0)  # gap down through the ATR stop, then flat
+    bars = _make_bars(np.concatenate([up, after]))
+    res = run_backtest(
+        {"TEST": bars},
+        BacktestConfig(warmup=50, atr_stop_mult=3.0),
+    )
+    exits = [t for t in res["trades"] if t["exit_reason"] in ("stop_loss", "trailing_stop")]
+    assert len(exits) >= 1
+
+
 def test_flat_market_finds_no_edge():
     bars = _make_bars(np.full(200, 100.0) + np.random.default_rng(0).normal(0, 0.05, 200))
     res = run_backtest({"TEST": bars}, BacktestConfig(warmup=50))
