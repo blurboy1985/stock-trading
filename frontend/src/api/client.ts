@@ -219,8 +219,15 @@ export interface AppSettings {
     sentiment_halflife_days?: number;
     sentiment_lm_weight?: number;
     fundamentals_sector_relative?: boolean;
+    news_sources?: string[];
+    news_scope?: "watchlist" | "universe";
+    news_per_source_limit?: number;
   };
   watchlist: string[];
+  news?: {
+    all_sources: string[];
+    available_sources: string[];
+  };
   broker: {
     has_credentials: boolean;
     is_paper: boolean;

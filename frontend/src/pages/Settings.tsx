@@ -7,6 +7,14 @@ import { openTradeGuide } from "../components/TradeWalkthrough";
 
 const SIGNALS = ["technical", "volatility", "momentum", "sentiment", "fundamentals"];
 
+const NEWS_SOURCE_LABELS: Record<string, string> = {
+  alpaca: "Alpaca (Benzinga)",
+  yfinance: "Yahoo Finance",
+  finnhub: "Finnhub",
+  marketaux: "Marketaux",
+  newsapi: "NewsAPI",
+};
+
 export function Settings() {
   const qc = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
@@ -37,6 +45,7 @@ export function Settings() {
   if (settings.isLoading || !draft) return <Spinner />;
   const broker = settings.data!.broker;
   const watchlist = settings.data!.watchlist;
+  const newsInfo = settings.data!.news;
 
   const update = (k: keyof typeof draft, v: unknown) => setDraft({ ...draft, [k]: v } as any);
 
@@ -192,6 +201,83 @@ export function Settings() {
             />
             Score valuation relative to sector peers
           </label>
+        </div>
+      </Panel>
+
+      {/* News sources */}
+      <Panel title="News Sources (sentiment)">
+        <p className="text-xs text-slate-500 mb-3">
+          Which feeds power the sentiment signal. Alpaca (Benzinga) is the fast
+          batched default. Extra sources are fetched per-symbol and merged with{" "}
+          <span className="text-slate-400">event-level de-duplication</span> — the
+          same story across many outlets is collapsed to one event, so duplicate
+          coverage can't bias the score.
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
+          {(newsInfo?.all_sources ?? ["alpaca"]).map((src) => {
+            const selected = (draft.news_sources ?? ["alpaca"]).includes(src);
+            const available = (newsInfo?.available_sources ?? ["alpaca"]).includes(src);
+            return (
+              <label
+                key={src}
+                className={`flex items-center gap-2 text-sm rounded-lg border px-3 py-2 ${
+                  available
+                    ? "cursor-pointer bg-panel2 border-edge hover:bg-edge"
+                    : "opacity-50 bg-panel2 border-edge cursor-not-allowed"
+                }`}
+                title={
+                  available
+                    ? ""
+                    : `Add ${src.toUpperCase()}_API_KEY to backend/.env to enable`
+                }
+              >
+                <input
+                  type="checkbox"
+                  disabled={!available}
+                  checked={selected && available}
+                  onChange={() => {
+                    const cur = draft.news_sources ?? ["alpaca"];
+                    update(
+                      "news_sources",
+                      cur.includes(src)
+                        ? cur.filter((s) => s !== src)
+                        : [...cur, src],
+                    );
+                  }}
+                  className="w-4 h-4 accent-blue-500"
+                />
+                <span className="capitalize">{NEWS_SOURCE_LABELS[src] ?? src}</span>
+                {!available && src !== "alpaca" && src !== "yfinance" && (
+                  <span className="text-[10px] text-slate-500 ml-auto">needs key</span>
+                )}
+              </label>
+            );
+          })}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label className="block">
+            <span className="text-xs text-slate-400">
+              Apply extra sources to
+            </span>
+            <select
+              value={draft.news_scope ?? "watchlist"}
+              onChange={(e) => update("news_scope", e.target.value)}
+              className="inp"
+            >
+              <option value="watchlist">My watchlist only (fast)</option>
+              <option value="universe">Entire scanned universe (slow)</option>
+            </select>
+            <span className="text-[11px] text-slate-500">
+              Extra feeds make a per-symbol HTTP call; scoping to the watchlist
+              keeps a broad scan fast. Alpaca always covers the full universe.
+            </span>
+          </label>
+          <NumField
+            label="Headlines per source / symbol"
+            value={draft.news_per_source_limit ?? 15}
+            step={5}
+            onChange={(v) => update("news_per_source_limit", Math.round(v))}
+          />
         </div>
       </Panel>
 

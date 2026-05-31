@@ -10,6 +10,7 @@ from ..config import settings as env_settings
 from ..db import SessionLocal
 from ..models import WatchlistItem
 from ..services import recommender, runtime_settings
+from ..strategies import news_sources
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -33,6 +34,9 @@ class SettingsUpdate(BaseModel):
     sentiment_halflife_days: float | None = None
     sentiment_lm_weight: float | None = None
     fundamentals_sector_relative: bool | None = None
+    news_sources: list[str] | None = None
+    news_scope: str | None = None
+    news_per_source_limit: int | None = None
 
 
 @router.get("")
@@ -40,6 +44,10 @@ def get_settings():
     return {
         "settings": runtime_settings.get_all(),
         "watchlist": recommender.get_universe(),
+        "news": {
+            "all_sources": list(news_sources.ALL_SOURCES),
+            "available_sources": news_sources.available_sources(),
+        },
         "broker": {
             "has_credentials": env_settings.has_credentials,
             "is_paper": env_settings.is_paper,

@@ -18,6 +18,7 @@ from ..config import settings
 from ..db import SessionLocal
 from ..models import Recommendation, WatchlistItem
 from ..strategies import fundamentals as fundamentals_mod
+from ..strategies import news_sources
 from ..strategies import regime as regime_mod
 from ..strategies.cross_section import momentum_signal
 from ..strategies.momentum import liquidity_ok, momentum_features
@@ -101,7 +102,12 @@ def generate(persist: bool = True) -> dict[str, Any]:
     cfg = runtime_settings.get_all()
     weights = cfg["weights"]
     universe, watchlist_set = build_universe(cfg)
-    news = _news_by_symbol(universe)
+    # Alpaca/Benzinga in one batched call, then merge any opt-in extra sources
+    # (Yahoo/Finnhub/Marketaux/NewsAPI) per-symbol with event-level de-dup so
+    # duplicate coverage can't bias the sentiment signal.
+    news = news_sources.build_symbol_news(
+        universe, watchlist_set, _news_by_symbol(universe), cfg
+    )
     start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=400)
 
     # With the LLM sentiment backend, score every distinct headline in one

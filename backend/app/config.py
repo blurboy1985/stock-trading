@@ -10,7 +10,6 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
@@ -20,6 +19,13 @@ class Settings(BaseSettings):
     apca_api_key_id: str = ""
     apca_api_secret_key: str = ""
     alpaca_base_url: str = "https://paper-api.alpaca.markets"
+
+    # ── External news providers (optional) ────────────────────────────
+    # Used only when the matching source is enabled in the `news_sources`
+    # setting. Each is best-effort: a missing key just disables that source.
+    finnhub_api_key: str = ""
+    marketaux_api_key: str = ""
+    newsapi_api_key: str = ""
 
     # ── LLM sentiment backend (optional) ──────────────────────────────
     # Only used when the `sentiment_backend` setting is "llm". It runs through
