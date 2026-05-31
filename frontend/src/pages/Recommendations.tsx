@@ -266,18 +266,15 @@ function ScoreExplainer({ r, sizing }: { r: Recommendation; sizing: SizingCfg })
   return (
     <div>
       <SectionLabel>How the score was computed</SectionLabel>
-      <p className="text-xs text-slate-500 mb-3">
-        Each signal family scores the stock from −1 to +1, then counts toward the
-        total in proportion to its weight (weights shown are renormalized over the
-        families with data, so they sum to 100%). The weighted contributions add up
-        to the composite score.
+      <p className="text-xs text-slate-400 mb-3">
+        Each family scores −1…+1, weighted (renormalized to 100%) into the composite.
       </p>
 
       <div className="space-y-1.5">
         {rows.map((row) => (
           <div key={row.name} className="flex items-center gap-2 text-xs">
-            <div className="w-24 capitalize text-slate-600">{row.name}</div>
-            <div className="w-14 text-right font-mono text-slate-500">
+            <div className="w-24 capitalize text-slate-300">{row.name}</div>
+            <div className="w-14 text-right font-mono text-slate-300">
               {signed(row.score)}
             </div>
             <div className="w-12 text-right font-mono text-slate-400">
@@ -332,7 +329,7 @@ function ScoreExplainer({ r, sizing }: { r: Recommendation; sizing: SizingCfg })
           </>
         )}
         <div className="flex items-center justify-between pt-1">
-          <span className="font-semibold text-slate-600">Final score</span>
+          <span className="font-semibold text-slate-200">Final score</span>
           <span
             className={`font-mono font-bold text-sm ${
               r.score > 0 ? "text-buy" : r.score < 0 ? "text-sell" : "text-slate-500"
@@ -345,27 +342,26 @@ function ScoreExplainer({ r, sizing }: { r: Recommendation; sizing: SizingCfg })
 
       <ThresholdScale r={r} sizing={sizing} />
 
-      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-500">
+      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-slate-400">
         <span>
           Agreement{" "}
-          <span className="font-mono text-slate-600">
+          <span className="font-mono text-slate-300">
             {r.agreement != null ? fmtPct(r.agreement, 0) : "—"}
-          </span>{" "}
-          <span className="text-slate-400">(weight share voting the same way)</span>
+          </span>
         </span>
         <span>
           Conviction{" "}
-          <span className="font-mono text-slate-600">
+          <span className="font-mono text-slate-300">
             {r.conviction != null ? r.conviction.toFixed(2) : "—"}
           </span>{" "}
-          <span className="text-slate-400">(|score| × agreement)</span>
+          (|score| × agreement)
         </span>
         <span>
-          Rank score{" "}
-          <span className="font-mono text-slate-600">
+          Rank{" "}
+          <span className="font-mono text-slate-300">
             {r.rank_score != null ? r.rank_score.toFixed(3) : "—"}
           </span>{" "}
-          <span className="text-slate-400">(score × conviction ÷ ATR%)</span>
+          (score × conviction ÷ ATR%)
         </span>
       </div>
     </div>
@@ -383,9 +379,9 @@ function Line({
 }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-slate-500">{label}</span>
+      <span className="text-slate-400">{label}</span>
       <span
-        className={`font-mono ${tone === "sell" ? "text-sell" : "text-slate-600"}`}
+        className={`font-mono ${tone === "sell" ? "text-sell" : "text-slate-200"}`}
       >
         {value}
       </span>
@@ -433,10 +429,9 @@ function SizingExplainer({ r, sizing }: { r: Recommendation; sizing: SizingCfg }
     return (
       <div>
         <SectionLabel>How much to sell</SectionLabel>
-        <p className="text-sm text-slate-600">
-          Score is in the SELL band — if you hold {r.symbol}, exit (or trim) the
-          position. The simulator is long-only, so there's no short to size; sells
-          close existing shares only.
+        <p className="text-sm text-slate-300">
+          SELL band — exit or trim if you hold {r.symbol}. Long-only, so sells close
+          existing shares only.
         </p>
       </div>
     );
@@ -446,9 +441,8 @@ function SizingExplainer({ r, sizing }: { r: Recommendation; sizing: SizingCfg }
     return (
       <div>
         <SectionLabel>How much to trade</SectionLabel>
-        <p className="text-sm text-slate-600">
-          Score sits in the neutral band, so no new position is sized. No action
-          suggested.
+        <p className="text-sm text-slate-300">
+          Neutral band — no new position sized.
           {r.liquidity_warning ? ` Note: ${r.liquidity_warning}.` : ""}
         </p>
       </div>
@@ -456,8 +450,6 @@ function SizingExplainer({ r, sizing }: { r: Recommendation; sizing: SizingCfg }
   }
 
   // BUY
-  const rawVol =
-    r.atr_pct && r.atr_pct > 0 ? sizing.targetRiskPct / Math.max(r.atr_pct, 0.005) : null;
   return (
     <div>
       <SectionLabel>How much to buy</SectionLabel>
@@ -474,39 +466,30 @@ function SizingExplainer({ r, sizing }: { r: Recommendation; sizing: SizingCfg }
       </div>
       {qty == null && (
         <p className="text-xs text-slate-400 mb-2">
-          Connect a funded account to size in shares — the target weight below still
-          applies.
+          Connect a funded account to size in shares — the target weight still applies.
         </p>
       )}
-      <div className="text-xs text-slate-500 leading-relaxed">
+      <div className="text-xs text-slate-300 leading-relaxed">
         {sizing.useVolSizing ? (
           <>
-            <span className="font-medium text-slate-600">Volatility-targeted size.</span>{" "}
-            Target risk {fmtPct(sizing.targetRiskPct, 1)} ÷ ATR{" "}
-            {r.atr_pct != null ? fmtPct(r.atr_pct, 1) : "—"} ={" "}
-            {rawVol != null ? fmtPct(rawVol, 1) : "—"}, capped at the{" "}
-            {fmtPct(sizing.maxPositionPct, 0)} max position and scaled by conviction{" "}
-            {r.conviction != null ? `(${r.conviction.toFixed(2)})` : ""} →{" "}
-            <span className="font-mono text-slate-600">
+            <span className="font-medium text-slate-200">Volatility-targeted.</span>{" "}
+            Risk {fmtPct(sizing.targetRiskPct, 1)} ÷ ATR{" "}
+            {r.atr_pct != null ? fmtPct(r.atr_pct, 1) : "—"}, capped at{" "}
+            {fmtPct(sizing.maxPositionPct, 0)} and scaled by conviction →{" "}
+            <span className="font-mono text-slate-200">
               {weight != null ? fmtPct(weight, 1) : "—"}
             </span>{" "}
-            of equity. Lower-volatility names earn a bigger weight so each position
-            carries comparable risk.
+            of equity.
           </>
         ) : (
           <>
-            <span className="font-medium text-slate-600">Fixed sizing.</span> Buys use
-            the flat {fmtPct(sizing.maxPositionPct, 0)} max-position weight
-            {weight != null ? ` (≈ ${fmtPct(weight, 1)} here)` : ""}. Turn on
-            volatility-targeted sizing in Settings to scale by risk and conviction.
+            <span className="font-medium text-slate-200">Fixed sizing</span> at the flat{" "}
+            {fmtPct(sizing.maxPositionPct, 0)} max-position weight
+            {weight != null ? ` (≈ ${fmtPct(weight, 1)})` : ""}.
           </>
         )}
         {qty != null && price > 0 && (
-          <>
-            {" "}
-            Shares = equity × {weight != null ? fmtPct(weight, 1) : "—"} ÷{" "}
-            {fmtUsd(price)}.
-          </>
+          <> Shares = equity × {weight != null ? fmtPct(weight, 1) : "—"} ÷ {fmtUsd(price)}.</>
         )}
       </div>
       {r.liquidity_warning && (
@@ -543,12 +526,153 @@ const FAMILY_INFO: Record<string, { label: string; about: string }> = {
 
 const FAMILY_ORDER = ["technical", "volatility", "momentum", "sentiment", "fundamentals"];
 
+// Per-indicator plain-language definitions + an external reference, shown when a
+// signal note is expanded. Keyed by an indicator id; reasons are mapped to an id
+// by keyword (see indicatorForReason). Anything unmatched falls back to the
+// family-level blurb so every note still gets a definition.
+const INDICATOR_INFO: Record<string, { blurb: string; href: string }> = {
+  rsi: {
+    blurb:
+      "RSI measures momentum on a 0–100 scale. Below 30 is oversold (often due a bounce), above 70 overbought.",
+    href: "https://www.investopedia.com/terms/r/rsi.asp",
+  },
+  macd: {
+    blurb:
+      "MACD tracks trend momentum; a positive, rising histogram means upside momentum is building.",
+    href: "https://www.investopedia.com/terms/m/macd.asp",
+  },
+  adx: {
+    blurb:
+      "ADX gauges trend strength (not direction). Above ~25 confirms a real trend rather than chop.",
+    href: "https://www.investopedia.com/terms/a/adx.asp",
+  },
+  sma: {
+    blurb:
+      "Moving-average crossover: a 20-day average above the 50-day signals a developing uptrend.",
+    href: "https://www.investopedia.com/terms/s/sma.asp",
+  },
+  donchian: {
+    blurb:
+      "A Donchian breakout is a close beyond the highest/lowest price of the prior N days — a classic trend trigger.",
+    href: "https://www.investopedia.com/terms/d/donchianchannels.asp",
+  },
+  volume: {
+    blurb:
+      "A volume spike (multiple of the average) shows conviction behind a move rather than a quiet drift.",
+    href: "https://www.investopedia.com/terms/v/volume.asp",
+  },
+  atr: {
+    blurb:
+      "ATR is the average daily range — a volatility gauge used to size positions so each carries similar risk.",
+    href: "https://www.investopedia.com/terms/a/atr.asp",
+  },
+  momentum: {
+    blurb:
+      "Cross-sectional momentum ranks each name's trailing return against the scanned universe; leaders tend to persist.",
+    href: "https://www.investopedia.com/terms/m/momentum.asp",
+  },
+  sentiment: {
+    blurb:
+      "News sentiment is a recency-weighted, finance-tuned polarity score over recent headlines for the symbol.",
+    href: "https://www.investopedia.com/terms/m/marketsentiment.asp",
+  },
+  pe: {
+    blurb:
+      "P/E compares price to earnings; judged here against the sector median rather than in absolute terms.",
+    href: "https://www.investopedia.com/terms/p/price-earningsratio.asp",
+  },
+  growth: {
+    blurb: "Revenue/earnings growth — how fast the business is expanding year over year.",
+    href: "https://www.investopedia.com/terms/r/revenue.asp",
+  },
+  margins: {
+    blurb: "Profit margin is the share of revenue kept as profit — a core quality/efficiency read.",
+    href: "https://www.investopedia.com/terms/p/profitmargin.asp",
+  },
+  roe: {
+    blurb: "Return on equity measures how much profit a company generates per dollar of shareholder equity.",
+    href: "https://www.investopedia.com/terms/r/returnonequity.asp",
+  },
+  leverage: {
+    blurb: "Debt-to-equity gauges balance-sheet risk; high leverage amplifies both gains and losses.",
+    href: "https://www.investopedia.com/terms/d/debtequityratio.asp",
+  },
+};
+
+// Map a free-text reason to an indicator id by keyword. Returns null when no
+// specific indicator matches (caller falls back to the family blurb).
+function indicatorForReason(reason: string): string | null {
+  const t = reason.toLowerCase();
+  if (t.includes("rsi")) return "rsi";
+  if (t.includes("macd")) return "macd";
+  if (t.includes("adx") || t.includes("trend")) return "adx";
+  if (t.includes("sma") || t.includes("moving average")) return "sma";
+  if (t.includes("breakout") || t.includes("breakdown") || t.includes("donchian")) return "donchian";
+  if (t.includes("volume")) return "volume";
+  if (t.includes("atr") || t.includes("volatility")) return "atr";
+  if (t.includes("strength") || t.includes("rank") || t.includes("momentum")) return "momentum";
+  if (t.includes("sentiment") || t.includes("news")) return "sentiment";
+  if (t.includes("p/e") || t.includes("pe ")) return "pe";
+  if (t.includes("growth") || t.includes("revenue") || t.includes("shrinking")) return "growth";
+  if (t.includes("margin")) return "margins";
+  if (t.includes("roe")) return "roe";
+  if (t.includes("leverage") || t.includes("d/e")) return "leverage";
+  return null;
+}
+
+const fmtMetric = (v: number | string | null): string => {
+  if (v == null) return "—";
+  if (typeof v === "string") return v;
+  if (Number.isNaN(v)) return "—";
+  return Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2);
+};
+
+// The metric keys worth surfacing per family, in display order, with labels.
+const FAMILY_METRICS: Record<string, { key: string; label: string; fmt?: (n: number) => string }[]> = {
+  technical: [
+    { key: "rsi", label: "RSI" },
+    { key: "macd_hist", label: "MACD hist" },
+    { key: "adx", label: "ADX" },
+    { key: "sma20", label: "SMA20" },
+    { key: "sma50", label: "SMA50" },
+  ],
+  volatility: [
+    { key: "atr_pct", label: "ATR%", fmt: (n) => fmtPct(n, 1) },
+    { key: "volume_ratio", label: "Vol ×" },
+    { key: "donchian_high", label: "20d high" },
+    { key: "donchian_low", label: "20d low" },
+  ],
+  momentum: [
+    { key: "rank", label: "Rank" },
+    { key: "universe", label: "of" },
+    { key: "percentile", label: "Pctile", fmt: (n) => fmtPct(n, 0) },
+    { key: "zscore", label: "z-score" },
+  ],
+  sentiment: [
+    { key: "avg_polarity", label: "Polarity" },
+    { key: "positive", label: "Pos" },
+    { key: "negative", label: "Neg" },
+    { key: "count", label: "Stories" },
+    { key: "backend", label: "Via" },
+  ],
+  fundamentals: [
+    { key: "trailing_pe", label: "P/E" },
+    { key: "revenue_growth", label: "Rev growth", fmt: (n) => fmtPct(n, 0) },
+    { key: "profit_margins", label: "Margin", fmt: (n) => fmtPct(n, 0) },
+    { key: "roe", label: "ROE", fmt: (n) => fmtPct(n, 0) },
+    { key: "debt_to_equity", label: "D/E" },
+  ],
+};
+
 /**
  * Signal notes, grouped by the family that produced them — each note sits under
  * its family's score and weight so you can see which signal said what and how
  * much it counted toward the composite.
  */
 function SignalNotes({ r }: { r: Recommendation }) {
+  // One note open at a time, keyed `${family}:${index}`.
+  const [openNote, setOpenNote] = useState<string | null>(null);
+
   const families = Object.keys(r.breakdown).sort(
     (a, b) => FAMILY_ORDER.indexOf(a) - FAMILY_ORDER.indexOf(b),
   );
@@ -561,19 +685,66 @@ function SignalNotes({ r }: { r: Recommendation }) {
   }
   const otherNotes = r.reasons.filter((x) => !familyReasons.has(x));
 
+  // Lazily fetch recent headlines only while a sentiment note is open — they're
+  // the evidence corpus behind the sentiment score (scoring doesn't persist the
+  // exact stories, so we show the symbol's current recent news).
+  const sentimentOpen = openNote?.startsWith("sentiment:") ?? false;
+  const news = useQuery({
+    queryKey: ["recoNews", r.symbol],
+    queryFn: () => api.news(r.symbol),
+    enabled: sentimentOpen,
+    staleTime: 5 * 60_000,
+  });
+
+  const renderNote = (family: string, reason: string, i: number) => {
+    const key = `${family}:${i}`;
+    const open = openNote === key;
+    return (
+      <li key={i} className="text-slate-200">
+        <div className="flex items-start gap-1.5">
+          <span className="flex-1">{reason}</span>
+          <button
+            onClick={() => setOpenNote(open ? null : key)}
+            className={`shrink-0 mt-0.5 h-4 w-4 rounded-full border text-[10px] leading-none ${
+              open
+                ? "bg-accent/20 border-accent/50 text-accent"
+                : "border-edge text-slate-400 hover:border-accent/50 hover:text-accent"
+            }`}
+            title="Show evidence & definition"
+            aria-label="Show evidence and definition"
+          >
+            i
+          </button>
+        </div>
+        {open && (
+          <NoteEvidence
+            family={family}
+            reason={reason}
+            r={r}
+            news={family === "sentiment" ? news.data?.news ?? [] : null}
+            newsLoading={family === "sentiment" && news.isLoading}
+          />
+        )}
+      </li>
+    );
+  };
+
   return (
     <div>
       <SectionLabel>Signal notes</SectionLabel>
-      <div className="space-y-2">
+      <p className="text-[11px] text-slate-400 mb-2">
+        Tap <span className="font-mono">ⓘ</span> on any note for its definition, the
+        live numbers behind it, and sources.
+      </p>
+      <div className="space-y-2.5">
         {families.map((f) => {
           const b = r.breakdown[f];
           if (!b) return null;
           const info = FAMILY_INFO[f] ?? { label: f, about: "" };
-          const contribution = b.score * b.weight;
           return (
             <div key={f} className="text-sm">
-              <div className="flex items-baseline gap-2 flex-wrap">
-                <span className="font-semibold text-slate-700 capitalize">
+              <div className="flex items-baseline gap-2">
+                <span className="font-semibold text-slate-100 capitalize">
                   {info.label}
                 </span>
                 <span
@@ -587,16 +758,10 @@ function SignalNotes({ r }: { r: Recommendation }) {
                 >
                   {signed(b.score)}
                 </span>
-                <span className="font-mono text-[11px] text-slate-400">
-                  ×{(b.weight * 100).toFixed(0)}% → {signed(contribution, 3)}
-                </span>
-                <span className="text-[11px] text-slate-400">{info.about}</span>
               </div>
               {b.reasons.length > 0 ? (
-                <ul className="text-sm text-slate-600 list-disc pl-5 space-y-0.5 mt-0.5">
-                  {b.reasons.map((reason, i) => (
-                    <li key={i}>{reason}</li>
-                  ))}
+                <ul className="text-sm list-disc pl-5 space-y-1 mt-0.5">
+                  {b.reasons.map((reason, i) => renderNote(f, reason, i))}
                 </ul>
               ) : (
                 <p className="text-xs text-slate-400 pl-5 mt-0.5 italic">
@@ -609,15 +774,118 @@ function SignalNotes({ r }: { r: Recommendation }) {
 
         {otherNotes.length > 0 && (
           <div className="text-sm pt-1 border-t border-edge/60">
-            <span className="font-semibold text-slate-700">Other</span>
-            <ul className="text-sm text-slate-600 list-disc pl-5 space-y-0.5 mt-0.5">
-              {otherNotes.map((reason, i) => (
-                <li key={i}>{reason}</li>
-              ))}
+            <span className="font-semibold text-slate-100">Other</span>
+            <ul className="text-sm list-disc pl-5 space-y-1 mt-0.5">
+              {otherNotes.map((reason, i) => renderNote("other", reason, i))}
             </ul>
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Inline evidence revealed under a clicked signal note. */
+function NoteEvidence({
+  family,
+  reason,
+  r,
+  news,
+  newsLoading,
+}: {
+  family: string;
+  reason: string;
+  r: Recommendation;
+  news: { headline: string; url: string; source: string }[] | null;
+  newsLoading: boolean;
+}) {
+  const indicatorId = indicatorForReason(reason);
+  const def =
+    (indicatorId && INDICATOR_INFO[indicatorId]) ||
+    // Fall back to the family blurb so every note has a definition + reference.
+    (family !== "other"
+      ? { blurb: FAMILY_INFO[family]?.about ?? "", href: INDICATOR_INFO[family]?.href ?? "" }
+      : null);
+
+  const metrics = r.breakdown[family]?.metrics ?? {};
+  const chips = (FAMILY_METRICS[family] ?? [])
+    .map((m) => {
+      const raw = metrics[m.key];
+      if (raw == null || raw === "") return null;
+      const value =
+        typeof raw === "number" && m.fmt ? m.fmt(raw) : fmtMetric(raw as number | string);
+      return { label: m.label, value };
+    })
+    .filter((x): x is { label: string; value: string } => x !== null);
+
+  return (
+    <div className="mt-1.5 mb-1 rounded-lg border border-edge bg-panel px-3 py-2.5 space-y-2">
+      {def?.blurb && (
+        <p className="text-xs text-slate-300 leading-relaxed">
+          {def.blurb}
+          {def.href && (
+            <>
+              {" "}
+              <a
+                href={def.href}
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent hover:underline whitespace-nowrap"
+              >
+                Learn more ↗
+              </a>
+            </>
+          )}
+        </p>
+      )}
+
+      {chips.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {chips.map((c) => (
+            <span
+              key={c.label}
+              className="text-[11px] font-mono rounded bg-panel2 border border-edge px-1.5 py-0.5 text-slate-300"
+            >
+              <span className="text-slate-400">{c.label}</span>{" "}
+              <span className="text-slate-100">{c.value}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {family === "sentiment" && (
+        <div>
+          <div className="text-[11px] text-slate-400 mb-1">Recent news for {r.symbol}</div>
+          {newsLoading ? (
+            <p className="text-xs text-slate-400">Loading headlines…</p>
+          ) : news && news.length > 0 ? (
+            <ul className="space-y-1">
+              {news.slice(0, 5).map((n, i) => (
+                <li key={i} className="text-xs leading-snug">
+                  <a
+                    href={n.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-slate-200 hover:text-accent"
+                  >
+                    {n.headline}
+                  </a>
+                  {n.source && <span className="text-slate-400 ml-1.5">· {n.source}</span>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-slate-400">No recent headlines found.</p>
+          )}
+        </div>
+      )}
+
+      <Link
+        to={`/ticker/${r.symbol}`}
+        className="inline-block text-xs text-accent hover:underline"
+      >
+        View {r.symbol} chart →
+      </Link>
     </div>
   );
 }
