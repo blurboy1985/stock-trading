@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     ibkr_trading_mode: str = "paper"
     trading_enabled: bool = False
     paper_starting_cash: float = 100_000.0
+    paper_cash_adjustment: float = 0.0
 
     # ── Legacy Alpaca settings (kept only for backwards-compatible env parsing)
     apca_api_key_id: str = ""

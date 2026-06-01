@@ -16,6 +16,7 @@ def test_config_defaults_are_ibkr_and_safe():
     assert s.ibkr_client_id == 11
     assert s.ibkr_account == ""
     assert s.ibkr_trading_mode == "paper"
+    assert s.paper_cash_adjustment == 0.0
     assert s.trading_enabled is False
     assert s.live_trading is False
     assert s.is_paper is True
@@ -45,12 +46,56 @@ def test_ibkr_connection_is_lazy_and_maps_account(monkeypatch):
 
     account = ibkr.get_account()
 
-    ib.connect.assert_called_once()
+    ib.client.connect.assert_called_once()
     assert account["account_number"] == "DU123"
     assert account["equity"] == 100000.0
     assert account["cash"] == 50000.0
     assert account["buying_power"] == 200000.0
     assert account["is_paper"] is True
+
+
+def test_ibkr_connect_disables_multi_account_group_request(monkeypatch):
+    from app.brokers import ibkr
+
+    ib = Mock()
+    ib.isConnected.return_value = False
+    monkeypatch.setattr(ibkr, "_ib", None)
+    monkeypatch.setattr(ibkr, "_ib_class", lambda: lambda: ib)
+    monkeypatch.setattr(ibkr.settings, "ibkr_account", "DU123")
+
+    out = ibkr._connect()
+
+    assert out is ib
+    assert ib.MaxSyncedSubAccounts == 0
+    ib.client.connect.assert_called_once_with(
+        ibkr.settings.ibkr_host,
+        ibkr.settings.ibkr_port,
+        clientId=ibkr.settings.ibkr_client_id,
+        timeout=5,
+    )
+
+
+def test_ibkr_paper_cash_adjustment_adds_to_account(monkeypatch):
+    from app.brokers import ibkr
+
+    ib = Mock()
+    ib.managedAccounts.return_value = ["DU123"]
+    ib.accountValues.return_value = [
+        SimpleNamespace(account="DU123", tag="NetLiquidation", value="100000", currency="USD"),
+        SimpleNamespace(account="DU123", tag="TotalCashValue", value="50000", currency="USD"),
+        SimpleNamespace(account="DU123", tag="BuyingPower", value="200000", currency="USD"),
+        SimpleNamespace(account="DU123", tag="GrossPositionValue", value="10000", currency="USD"),
+    ]
+    monkeypatch.setattr(ibkr, "_connect", lambda: ib)
+    monkeypatch.setattr(ibkr.settings, "ibkr_trading_mode", "paper")
+    monkeypatch.setattr(ibkr.settings, "paper_cash_adjustment", 900000.0)
+
+    account = ibkr.get_account()
+
+    assert account["equity"] == 1000000.0
+    assert account["cash"] == 950000.0
+    assert account["buying_power"] == 1100000.0
+    assert account["portfolio_value"] == 1000000.0
 
 
 def test_ibkr_submit_order_requires_app_trading_enabled(monkeypatch):

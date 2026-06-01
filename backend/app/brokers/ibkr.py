@@ -56,22 +56,47 @@ def _connect() -> Any:
                 _ib.RequestTimeout = 2
             except Exception:
                 pass
+            try:
+                # ib_insync's connect sync also issues reqAccountUpdatesMulti
+                # for small account lists. Some IB Gateway builds reject the
+                # blank model/group argument with error 321 ("Group name cannot
+                # be null"). The adapter only needs single-account cached
+                # values/portfolio rows, so disable that automatic multi-account
+                # request before connecting.
+                _ib.MaxSyncedSubAccounts = 0
+            except Exception:
+                pass
         if not _ib.isConnected():
             last_exc: Exception | None = None
             connected = False
             client_ids = [settings.ibkr_client_id, settings.ibkr_client_id + 1, settings.ibkr_client_id + 2]
             for client_id in dict.fromkeys(client_ids):
                 try:
-                    _ib.connect(settings.ibkr_host, settings.ibkr_port, clientId=client_id, timeout=5)
+                    # Use the low-level socket handshake instead of IB.connect().
+                    # IB.connect() performs a full account/position/order sync;
+                    # on some Gateway sessions those sync requests time out or
+                    # emit account-group errors even though the API socket is
+                    # usable for quotes, orders, and cached account state.
+                    _ib.client.connect(
+                        settings.ibkr_host,
+                        settings.ibkr_port,
+                        clientId=client_id,
+                        timeout=5,
+                    )
                     connected = True
                     break
                 except Exception as exc:  # noqa: BLE001
                     last_exc = exc
+                    try:
+                        _ib.disconnect()
+                    except Exception:
+                        pass
             if not connected:
+                detail = f" {type(last_exc).__name__}: {last_exc}" if last_exc else ""
                 raise BrokerUnavailable(
                     "IBKR is not connected. Start TWS/IB Gateway, enable Socket API, "
                     f"and verify IBKR_HOST={settings.ibkr_host} IBKR_PORT={settings.ibkr_port} "
-                    f"IBKR_CLIENT_ID={settings.ibkr_client_id}."
+                    f"IBKR_CLIENT_ID={settings.ibkr_client_id}.{detail}"
                 ) from last_exc
         return _ib
 
@@ -145,6 +170,11 @@ def _get_account_unlocked() -> dict[str, Any]:
     currency = getattr(sm.get("NetLiquidation"), "currency", "USD") or "USD"
     if settings.is_paper and not any((equity, cash, buying_power, gross)):
         cash = equity = buying_power = float(settings.paper_starting_cash)
+    if settings.is_paper:
+        adjustment = float(settings.paper_cash_adjustment or 0.0)
+        cash += adjustment
+        buying_power += adjustment
+        equity += adjustment
     return {
         "account_number": account,
         "equity": equity,
@@ -306,11 +336,6 @@ def _get_positions_unlocked() -> list[dict[str, Any]]:
         rows = ib.positions(account) if account else ib.positions()
     except Exception:
         rows = []
-    if not rows:
-        try:
-            rows = ib.reqPositions() or []
-        except Exception:
-            rows = []
     for p in rows:
         c = getattr(p, "contract", None)
         if account and getattr(p, "account", account) != account:
