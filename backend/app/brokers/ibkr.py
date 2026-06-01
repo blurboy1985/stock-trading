@@ -15,8 +15,11 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+from sqlalchemy import select
 
 from ..config import settings
+from ..db import SessionLocal
+from ..models import OrderRecord
 from .base import BrokerUnavailable, enumval, safe_float
 
 _ib: Any | None = None
@@ -526,6 +529,51 @@ def _trade_log_messages(trade: Any) -> list[str]:
     return messages[-5:]
 
 
+def _local_order_submitted_at(order_ids: set[str]) -> dict[str, str]:
+    if not order_ids:
+        return {}
+    try:
+        with SessionLocal() as db:
+            rows = db.scalars(
+                select(OrderRecord).where(OrderRecord.alpaca_order_id.in_(order_ids))
+            ).all()
+    except Exception:
+        return {}
+    return {
+        str(row.alpaca_order_id): row.created_at.isoformat()
+        for row in rows
+        if row.alpaca_order_id and row.created_at
+    }
+
+
+def _local_order_submitted_at_by_details() -> tuple[
+    dict[tuple[str, str, float], str],
+    dict[tuple[str, str], str],
+]:
+    try:
+        with SessionLocal() as db:
+            rows = db.scalars(select(OrderRecord)).all()
+    except Exception:
+        return {}, {}
+
+    by_qty: dict[tuple[str, str, float], str] = {}
+    by_symbol_side_rows: dict[tuple[str, str], list[OrderRecord]] = {}
+    for row in rows:
+        if not row.created_at:
+            continue
+        symbol = row.symbol.upper()
+        side = row.side.lower()
+        by_qty[(symbol, side, float(row.qty or 0))] = row.created_at.isoformat()
+        by_symbol_side_rows.setdefault((symbol, side), []).append(row)
+
+    by_unique_symbol_side = {
+        key: matches[0].created_at.isoformat()
+        for key, matches in by_symbol_side_rows.items()
+        if len(matches) == 1
+    }
+    return by_qty, by_unique_symbol_side
+
+
 def _why_pending(state: str, order_type: str) -> str | None:
     st = state.lower()
     if st == "pendingsubmit":
@@ -602,6 +650,12 @@ def _list_orders_unlocked(status: str = "all", limit: int = 50) -> list[dict[str
         pass
     out: list[dict[str, Any]] = []
     trades = list(ib.trades() or [])
+    order_ids = {
+        str(getattr(getattr(trade, "order", None), "orderId", ""))
+        for trade in trades[-limit:]
+    }
+    submitted_at_by_id = _local_order_submitted_at({oid for oid in order_ids if oid and oid != "0"})
+    submitted_at_by_details, submitted_at_by_unique_symbol_side = _local_order_submitted_at_by_details()
     for trade in trades[-limit:]:
         order = getattr(trade, "order", None)
         contract = getattr(trade, "contract", None)
@@ -618,15 +672,24 @@ def _list_orders_unlocked(status: str = "all", limit: int = 50) -> list[dict[str
         if state not in {"filled", "cancelled", "inactive"} and remaining_qty <= 0 and filled_qty < qty:
             remaining_qty = max(0.0, qty - filled_qty)
         log_messages = _trade_log_messages(trade)
+        order_id = str(getattr(order, "orderId", ""))
+        symbol = getattr(contract, "symbol", "")
+        side = enumval(getattr(order, "action", ""))
+        submitted_at = submitted_at_by_id.get(order_id)
+        if submitted_at is None:
+            detail_key = (symbol.upper(), side.lower(), qty)
+            submitted_at = submitted_at_by_details.get(detail_key)
+        if submitted_at is None:
+            submitted_at = submitted_at_by_unique_symbol_side.get((symbol.upper(), side.lower()))
         out.append({
-            "id": str(getattr(order, "orderId", "")),
-            "broker_order_id": str(getattr(order, "orderId", "")),
-            "symbol": getattr(contract, "symbol", ""),
+            "id": order_id,
+            "broker_order_id": order_id,
+            "symbol": symbol,
             "qty": qty,
             "filled_qty": filled_qty,
             "remaining_qty": remaining_qty,
             "filled_avg_price": safe_float(getattr(st, "avgFillPrice", 0)) or None,
-            "side": enumval(getattr(order, "action", "")),
+            "side": side,
             "type": order_type,
             "order_class": "",
             "time_in_force": getattr(order, "tif", "DAY") or "DAY",
@@ -637,7 +700,7 @@ def _list_orders_unlocked(status: str = "all", limit: int = 50) -> list[dict[str
             "pending_reason": _why_pending(state, order_type),
             "log": log_messages,
             "extended_hours": False,
-            "submitted_at": None,
+            "submitted_at": submitted_at,
             "filled_at": None,
         })
     return out
