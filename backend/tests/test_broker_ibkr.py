@@ -97,6 +97,44 @@ def test_ibkr_submit_order_maps_trade_without_real_ib(monkeypatch):
     assert result["status"] == "submitted"
 
 
+def test_ibkr_bars_multi_prefers_batch_fallback_and_bounds_ibkr_calls(monkeypatch):
+    from app.brokers import ibkr
+
+    symbols = [f"SYM{i}" for i in range(12)]
+    monkeypatch.setattr(ibkr, "_bars_from_yfinance", lambda symbols, start, end=None, timeframe="1Day": {"SYM0": ibkr._empty_bars()})
+    called: list[str] = []
+
+    def fake_get_bars(symbol, start, end=None, timeframe="1Day"):
+        called.append(symbol)
+        raise ibkr.BrokerUnavailable("IBKR unavailable")
+
+    monkeypatch.setattr(ibkr, "get_bars", fake_get_bars)
+
+    out = ibkr.get_bars_multi(symbols, "2024-01-01", "2024-01-31")
+
+    assert list(out) == ["SYM0"]
+    assert called == symbols[1:11]
+
+
+def test_scheduler_cycle_lock_returns_in_progress_without_running(monkeypatch):
+    from app.services import scheduler
+
+    ran = False
+
+    def fail_if_called(*args, **kwargs):
+        nonlocal ran
+        ran = True
+        raise AssertionError("recommendations should not run when another cycle is active")
+
+    monkeypatch.setattr(scheduler.recommender, "generate", fail_if_called)
+    scheduler._cycle_lock.acquire()
+    try:
+        assert scheduler.run_cycle(force=True) == {"skipped": "cycle already running"}
+    finally:
+        scheduler._cycle_lock.release()
+    assert ran is False
+
+
 def test_sync_watchlist_is_noop():
     from app import broker_client as broker
 

@@ -241,6 +241,60 @@ def _duration(start: dt.datetime | dt.date | str, end: dt.datetime | dt.date | s
     return f"{days} D" if days < 365 else f"{max(1, days // 365)} Y"
 
 
+def _empty_bars() -> pd.DataFrame:
+    return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+
+
+def _bars_from_yfinance(symbols: list[str], start: dt.datetime | dt.date | str, end: dt.datetime | dt.date | str | None = None, timeframe: str = "1Day") -> dict[str, pd.DataFrame]:
+    """Fast no-key historical-data fallback for recommendation scans.
+
+    IBKR historical requests are authoritative but sequential and can take 10–60s
+    per symbol when Gateway is slow. A recommendations page that scans many
+    symbols must not block on that. Use Yahoo daily/hourly bars for broad scoring
+    and keep IBKR for quotes, portfolio and orders.
+    """
+    if not symbols:
+        return {}
+    interval = {"1Day": "1d", "1Hour": "1h", "1Min": "1m", "15Min": "15m"}.get(timeframe, "1d")
+    try:
+        import yfinance as yf
+        raw = yf.download(
+            tickers=" ".join(dict.fromkeys(s.upper() for s in symbols)),
+            start=pd.Timestamp(start).date().isoformat(),
+            end=(pd.Timestamp(end).date().isoformat() if end is not None else None),
+            interval=interval,
+            auto_adjust=False,
+            progress=False,
+            group_by="ticker",
+            threads=True,
+            timeout=15,
+        )
+    except Exception:
+        return {}
+    out: dict[str, pd.DataFrame] = {}
+    if raw is None or raw.empty:
+        return out
+    for sym in symbols:
+        try:
+            if isinstance(raw.columns, pd.MultiIndex):
+                part = raw[sym.upper()] if sym.upper() in raw.columns.get_level_values(0) else raw[sym]
+            else:
+                part = raw
+            cols = {str(c).lower().replace(" ", "_"): c for c in part.columns}
+            df = pd.DataFrame({
+                "open": part[cols.get("open")],
+                "high": part[cols.get("high")],
+                "low": part[cols.get("low")],
+                "close": part[cols.get("close")],
+                "volume": part[cols.get("volume")],
+            }).dropna(subset=["open", "high", "low", "close"])
+            if not df.empty:
+                out[sym.upper()] = df[["open", "high", "low", "close", "volume"]]
+        except Exception:
+            continue
+    return out
+
+
 def get_bars(symbol: str, start: dt.datetime | dt.date | str, end: dt.datetime | dt.date | str | None = None, timeframe: str = "1Day") -> pd.DataFrame:
     ib = _connect()
     bar_size = {"1Day": "1 day", "1Hour": "1 hour", "1Min": "1 min", "15Min": "15 mins"}.get(timeframe, "1 day")
@@ -252,15 +306,36 @@ def get_bars(symbol: str, start: dt.datetime | dt.date | str, end: dt.datetime |
             contract = qualified[0]
     except Exception:
         pass
-    bars = ib.reqHistoricalData(contract, endDateTime=end_dt, durationStr=_duration(start, end), barSizeSetting=bar_size, whatToShow="TRADES", useRTH=True, formatDate=1)
+    try:
+        bars = ib.reqHistoricalData(
+            contract,
+            endDateTime=end_dt,
+            durationStr=_duration(start, end),
+            barSizeSetting=bar_size,
+            whatToShow="TRADES",
+            useRTH=True,
+            formatDate=1,
+            timeout=10,
+        )
+    except Exception:
+        bars = []
     rows = [{"timestamp": pd.Timestamp(b.date), "open": b.open, "high": b.high, "low": b.low, "close": b.close, "volume": b.volume} for b in bars or []]
-    if not rows:
-        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
-    return pd.DataFrame(rows).set_index("timestamp")[["open", "high", "low", "close", "volume"]]
+    if rows:
+        return pd.DataFrame(rows).set_index("timestamp")[["open", "high", "low", "close", "volume"]]
+    return _bars_from_yfinance([symbol], start, end, timeframe).get(symbol.upper(), _empty_bars())
 
 
 def get_bars_multi(symbols: list[str], start: dt.datetime | dt.date | str, end: dt.datetime | dt.date | str | None = None, timeframe: str = "1Day") -> dict[str, pd.DataFrame]:
-    return {s: df for s in symbols if not (df := get_bars(s, start, end, timeframe)).empty}
+    out = _bars_from_yfinance(symbols, start, end, timeframe)
+    missing = [s for s in symbols if s.upper() not in out]
+    for s in missing[:10]:  # bounded IBKR fallback; avoid page-load hangs on broad scans
+        try:
+            df = get_bars(s, start, end, timeframe)
+        except Exception:
+            continue
+        if not df.empty:
+            out[s.upper()] = df
+    return out
 
 
 def submit_order(symbol: str, qty: float, side: str, order_type: str = "market", limit_price: float | None = None, stop_loss: float | None = None, take_profit: float | None = None, confirm_live: bool = False) -> dict[str, Any]:

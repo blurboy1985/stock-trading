@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import threading
 from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -21,6 +22,7 @@ from . import proposals, recommender, runtime_settings, trailing
 log = logging.getLogger("scheduler")
 
 _scheduler: BackgroundScheduler | None = None
+_cycle_lock = threading.Lock()
 
 # Latest cycle output, served to clients without recomputing.
 LATEST: dict[str, Any] = {
@@ -38,42 +40,61 @@ def _market_open() -> bool:
 
 
 def run_cycle(force: bool = False) -> dict[str, Any]:
-    """One full pass: refresh recommendations and (if on) propose auto-trades."""
-    if not settings.has_credentials:
-        return {"skipped": "no credentials"}
-    if not force and not _market_open():
-        return {"skipped": "market closed"}
+    """One full pass: refresh recommendations and (if on) propose auto-trades.
 
-    reco = recommender.generate(persist=True)
-    proposed: list[dict[str, Any]] = []
+    The UI can request recommendations while the startup scheduler is already
+    scanning. Avoid concurrent cycles: IBKR allows one session per client id and
+    concurrent broker calls can wedge page loads.
+    """
+    if not _cycle_lock.acquire(blocking=False):
+        return {"skipped": "cycle already running"}
+    try:
+        if not settings.has_credentials:
+            return {"skipped": "no credentials"}
+        if not force and not _market_open():
+            return {"skipped": "market closed"}
 
-    if runtime_settings.get("auto_trade") and reco.get("configured"):
-        # Supersede last cycle's untouched proposals, then propose fresh ones.
-        proposals.expire_stale()
-        proposed = proposals.build_from_reco(reco)
+        reco = recommender.generate(persist=True)
+        proposed: list[dict[str, Any]] = []
+        proposal_error: str | None = None
 
-    # Ratchet trailing stops on held positions (no-op unless enabled). Self-gated
-    # and never raises, but wrap defensively so it can't break the cycle.
-    trail: dict[str, Any] = {}
-    if runtime_settings.get("trailing_stop_enabled"):
-        try:
-            trail = trailing.run()
-        except Exception:  # noqa: BLE001
-            log.exception("trailing-stop pass failed")
-            trail = {"error": "exception"}
+        if runtime_settings.get("auto_trade") and reco.get("configured"):
+            # Supersede last cycle's untouched proposals, then propose fresh ones.
+            # Proposal building needs portfolio/account data; keep failures from
+            # preventing the recommendations page from loading.
+            try:
+                proposals.expire_stale()
+                proposed = proposals.build_from_reco(reco)
+            except Exception as exc:  # noqa: BLE001
+                log.exception("auto-proposal pass failed")
+                proposal_error = f"{type(exc).__name__}: {exc}"
 
-    LATEST.update(
-        recommendations=reco.get("recommendations", []),
-        top_buys=reco.get("top_buys", []),
-        top_sells=reco.get("top_sells", []),
-        generated_at=reco.get("generated_at"),
-        regime=reco.get("regime"),
-    )
-    return {
-        "recommendations": len(reco.get("recommendations", [])),
-        "proposals": len(proposed),
-        "trailing_moves": len(trail.get("moves", [])),
-    }
+        # Ratchet trailing stops on held positions (no-op unless enabled). Self-gated
+        # and never raises, but wrap defensively so it can't break the cycle.
+        trail: dict[str, Any] = {}
+        if runtime_settings.get("trailing_stop_enabled"):
+            try:
+                trail = trailing.run()
+            except Exception:  # noqa: BLE001
+                log.exception("trailing-stop pass failed")
+                trail = {"error": "exception"}
+
+        LATEST.update(
+            recommendations=reco.get("recommendations", []),
+            top_buys=reco.get("top_buys", []),
+            top_sells=reco.get("top_sells", []),
+            generated_at=reco.get("generated_at"),
+            regime=reco.get("regime"),
+            proposal_error=proposal_error,
+        )
+        return {
+            "recommendations": len(reco.get("recommendations", [])),
+            "proposals": len(proposed),
+            "proposal_error": proposal_error,
+            "trailing_moves": len(trail.get("moves", [])),
+        }
+    finally:
+        _cycle_lock.release()
 
 
 def start_scheduler() -> None:
