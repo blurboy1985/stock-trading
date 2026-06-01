@@ -16,7 +16,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from .. import alpaca_client as ac
 from ..config import settings
-from . import proposals, recommender, runtime_settings
+from . import proposals, recommender, runtime_settings, trailing
 
 log = logging.getLogger("scheduler")
 
@@ -52,6 +52,16 @@ def run_cycle(force: bool = False) -> dict[str, Any]:
         proposals.expire_stale()
         proposed = proposals.build_from_reco(reco)
 
+    # Ratchet trailing stops on held positions (no-op unless enabled). Self-gated
+    # and never raises, but wrap defensively so it can't break the cycle.
+    trail: dict[str, Any] = {}
+    if runtime_settings.get("trailing_stop_enabled"):
+        try:
+            trail = trailing.run()
+        except Exception:  # noqa: BLE001
+            log.exception("trailing-stop pass failed")
+            trail = {"error": "exception"}
+
     LATEST.update(
         recommendations=reco.get("recommendations", []),
         top_buys=reco.get("top_buys", []),
@@ -62,6 +72,7 @@ def run_cycle(force: bool = False) -> dict[str, Any]:
     return {
         "recommendations": len(reco.get("recommendations", [])),
         "proposals": len(proposed),
+        "trailing_moves": len(trail.get("moves", [])),
     }
 
 

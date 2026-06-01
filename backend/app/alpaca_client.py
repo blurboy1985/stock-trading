@@ -564,6 +564,33 @@ def cancel_order(order_id: str) -> None:
     _trading_client().cancel_order_by_id(order_id)
 
 
+def replace_order(
+    order_id: str,
+    *,
+    stop_price: float | None = None,
+    limit_price: float | None = None,
+) -> dict[str, Any]:
+    """Amend a working order's stop/limit price (e.g. ratchet a trailing stop).
+
+    Replacing (vs cancel+resubmit) preserves the order's place in any OCO/bracket
+    relationship, so raising the stop leg leaves the take-profit leg intact.
+    """
+    from alpaca.trading.requests import ReplaceOrderRequest
+
+    kwargs: dict[str, Any] = {}
+    if stop_price is not None:
+        kwargs["stop_price"] = round(float(stop_price), 2)
+    if limit_price is not None:
+        kwargs["limit_price"] = round(float(limit_price), 2)
+    o = _trading_client().replace_order_by_id(order_id, ReplaceOrderRequest(**kwargs))
+    return {
+        "id": str(getattr(o, "id", "")),
+        "symbol": getattr(o, "symbol", ""),
+        "stop_price": _safe_float(getattr(o, "stop_price", 0)) or None,
+        "status": _enumval(getattr(o, "status", "")),
+    }
+
+
 def close_position(symbol: str) -> dict[str, Any]:
     """Liquidate a position at market, cancelling any open orders on the symbol
     first so shares reserved by a bracket (OCO) don't block the close.

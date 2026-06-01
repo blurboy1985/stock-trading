@@ -22,6 +22,9 @@ class SettingsUpdate(BaseModel):
     stop_loss_pct: float | None = None
     take_profit_pct: float | None = None
     atr_stop_mult: float | None = None
+    trailing_stop_enabled: bool | None = None
+    trailing_atr_mult: float | None = None
+    trailing_stop_dry_run: bool | None = None
     auto_trade: bool | None = None
     buy_threshold: float | None = None
     sell_threshold: float | None = None

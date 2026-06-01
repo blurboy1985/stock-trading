@@ -133,6 +133,24 @@ class BacktestRun(Base):
     trades: Mapped[list[Any]] = mapped_column(JSON, default=list)
 
 
+class PositionTrail(Base):
+    """High-water mark per held position, for the live trailing-stop ratchet.
+
+    Alpaca is the source of truth for the position itself; this just remembers
+    the highest close seen since entry so the scheduler can ratchet the bracket's
+    stop leg up to ``high_water - k*ATR`` each cycle. ``entry_price`` lets us
+    detect a re-opened/averaged position and reset the high-water mark.
+    """
+
+    __tablename__ = "position_trails"
+
+    symbol: Mapped[str] = mapped_column(String(16), primary_key=True)
+    entry_price: Mapped[float] = mapped_column(Float)
+    high_water: Mapped[float] = mapped_column(Float)
+    last_stop: Mapped[float | None] = mapped_column(Float, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=_utcnow)
+
+
 class Setting(Base):
     """Simple key/value store for editable runtime settings (weights, etc.)."""
 

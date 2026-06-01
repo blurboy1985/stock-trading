@@ -28,6 +28,13 @@ DEFAULTS: dict[str, Any] = {
     # Volatility-scaled stops. When >0 the initial stop is placed this many ATRs
     # below the fill (overriding the flat stop_loss_pct); 0 keeps the flat %.
     "atr_stop_mult": 0.0,
+    # Live trailing-stop ratchet (paper). When enabled, each scheduler cycle
+    # raises a held position's bracket stop toward high_water - k*ATR (it only
+    # ever tightens, never loosens). Dry-run logs intended moves without touching
+    # orders — flip it off once you've watched it behave. See services/trailing.py.
+    "trailing_stop_enabled": False,
+    "trailing_atr_mult": 3.0,
+    "trailing_stop_dry_run": True,
     "auto_trade": False,  # scheduler auto-proposes trades (user confirms) when true
     "buy_threshold": 0.25,
     "sell_threshold": -0.25,
