@@ -5,6 +5,7 @@ opens a socket. All tests mock the IB object; no real orders are submitted.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import time
 from functools import lru_cache
@@ -20,7 +21,16 @@ from .base import BrokerUnavailable, enumval, safe_float
 _ib: Any | None = None
 
 
+def _ensure_event_loop() -> None:
+    """eventkit/ib_insync expects a current loop; Python 3.14 no longer creates one implicitly."""
+    try:
+        asyncio.get_event_loop_policy().get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+
 def _ib_class():
+    _ensure_event_loop()
     try:
         from ib_insync import IB
     except Exception as exc:  # noqa: BLE001
@@ -31,7 +41,7 @@ def _ib_class():
     return IB
 
 
-def _connect():
+def _connect() -> Any:
     global _ib
     if _ib is None:
         _ib = _ib_class()()
@@ -48,6 +58,7 @@ def _connect():
 
 
 def _stock(symbol: str):
+    _ensure_event_loop()
     try:
         from ib_insync import Stock
     except Exception as exc:  # noqa: BLE001
@@ -56,6 +67,7 @@ def _stock(symbol: str):
 
 
 def _market_order(action: str, qty: float):
+    _ensure_event_loop()
     try:
         from ib_insync import MarketOrder
     except Exception as exc:  # noqa: BLE001
@@ -64,6 +76,7 @@ def _market_order(action: str, qty: float):
 
 
 def _limit_order(action: str, qty: float, price: float):
+    _ensure_event_loop()
     try:
         from ib_insync import LimitOrder
     except Exception as exc:  # noqa: BLE001
@@ -86,8 +99,15 @@ def _account_id(ib) -> str:
 
 
 def _summary_map(ib) -> dict[str, Any]:
+    # ``ib.accountSummary()`` can block indefinitely on some Gateway builds with
+    # error 321 ("Group name cannot be null"). Use the cached account values that
+    # ib_insync maintains after connection; return an empty map rather than
+    # hanging the portfolio route if Gateway/account permissions do not publish them.
     account = _account_id(ib)
-    rows = ib.accountSummary(account) if account else ib.accountSummary()
+    try:
+        rows = ib.accountValues(account) if account else ib.accountValues()
+    except Exception:
+        rows = []
     return {getattr(r, "tag", ""): r for r in rows or []}
 
 
@@ -131,8 +151,9 @@ def get_account() -> dict[str, Any]:
 
 def get_positions() -> list[dict[str, Any]]:
     ib = _connect()
+    account = _account_id(ib)
     out: list[dict[str, Any]] = []
-    for p in ib.positions() or []:
+    for p in ib.positions(account) or []:
         c = getattr(p, "contract", None)
         sym = getattr(c, "symbol", "")
         qty = safe_float(getattr(p, "position", 0))
@@ -178,15 +199,30 @@ def get_asset(symbol: str) -> dict[str, Any]:
 def get_latest_quote(symbol: str) -> dict[str, Any]:
     ib = _connect()
     contract = _stock(symbol)
+    try:
+        qualified = ib.qualifyContracts(contract)
+        if qualified:
+            contract = qualified[0]
+    except Exception:
+        pass
+    try:
+        ib.reqMarketDataType(3)  # delayed data if live market-data entitlements are absent
+    except Exception:
+        pass
     ticker = ib.reqMktData(contract, "", False, False)
     try:
-        ib.sleep(1)
+        ib.sleep(2)
     except Exception:  # noqa: BLE001
         pass
     bid = safe_float(getattr(ticker, "bid", 0))
     ask = safe_float(getattr(ticker, "ask", 0))
     last = safe_float(getattr(ticker, "last", 0))
-    mid = (bid + ask) / 2 if bid and ask else (bid or ask or last)
+    close = safe_float(getattr(ticker, "close", 0))
+    mid = (bid + ask) / 2 if bid and ask else (bid or ask or last or close)
+    try:
+        ib.cancelMktData(contract)
+    except Exception:
+        pass
     return {"symbol": symbol.upper(), "bid": bid, "ask": ask, "mid": round(mid, 4), "timestamp": dt.datetime.now(dt.timezone.utc).isoformat()}
 
 
@@ -209,7 +245,14 @@ def get_bars(symbol: str, start: dt.datetime | dt.date | str, end: dt.datetime |
     ib = _connect()
     bar_size = {"1Day": "1 day", "1Hour": "1 hour", "1Min": "1 min", "15Min": "15 mins"}.get(timeframe, "1 day")
     end_dt = "" if end is None else pd.Timestamp(end).strftime("%Y%m%d %H:%M:%S")
-    bars = ib.reqHistoricalData(_stock(symbol), endDateTime=end_dt, durationStr=_duration(start, end), barSizeSetting=bar_size, whatToShow="TRADES", useRTH=True, formatDate=1)
+    contract = _stock(symbol)
+    try:
+        qualified = ib.qualifyContracts(contract)
+        if qualified:
+            contract = qualified[0]
+    except Exception:
+        pass
+    bars = ib.reqHistoricalData(contract, endDateTime=end_dt, durationStr=_duration(start, end), barSizeSetting=bar_size, whatToShow="TRADES", useRTH=True, formatDate=1)
     rows = [{"timestamp": pd.Timestamp(b.date), "open": b.open, "high": b.high, "low": b.low, "close": b.close, "volume": b.volume} for b in bars or []]
     if not rows:
         return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])

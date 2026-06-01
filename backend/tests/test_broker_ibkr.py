@@ -35,7 +35,7 @@ def test_ibkr_connection_is_lazy_and_maps_account(monkeypatch):
     ib = Mock()
     ib.isConnected.return_value = False
     ib.managedAccounts.return_value = ["DU123"]
-    ib.accountSummary.return_value = [
+    ib.accountValues.return_value = [
         SimpleNamespace(account="DU123", tag="NetLiquidation", value="100000", currency="USD"),
         SimpleNamespace(account="DU123", tag="TotalCashValue", value="50000", currency="USD"),
         SimpleNamespace(account="DU123", tag="BuyingPower", value="200000", currency="USD"),
