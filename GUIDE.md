@@ -56,6 +56,10 @@ Do this before your first session; revisit only when your strategy changes.
 - **Quant controls** — regime filter (throttles longs in a risk-off tape),
   volatility-targeted sizing, benchmark (SPY), target risk per position, and the
   liquidity floors (min $-volume, min price).
+- **Trailing stop** — enable/disable, the **ATR multiple** (default 3.0), and a
+  **dry-run** toggle (default on). When enabled the scheduler ratchets each held
+  position's bracket stop up as price advances (§6). Leave dry-run on until you've
+  watched it behave.
 - **Risk limits** — max position %, max total exposure %, stop-loss %, take-profit
   %. **These are enforced on every order** (§4). Set them to what you can live
   with; they are your seatbelt.
@@ -166,9 +170,21 @@ fill). It uses auto-sizing and the same risk gate.
 > supply the per-order live confirmation the live gate requires, so it can never
 > place a real-money order — by construction, not by configuration.
 
-Autopilot is deliberately simple: it does not rebalance existing sizes, scale in,
-or trail stops beyond the initial bracket. Treat it as a hands-off paper
-experiment, and check the **auto-actions** it reports.
+Autopilot is deliberately simple: it does not rebalance existing sizes or scale
+in. Treat it as a hands-off paper experiment, and check the **auto-actions** it
+reports.
+
+### Trailing stops (separate toggle)
+Independently of auto-trade, **Settings → Trailing stop** lets the scheduler
+ratchet the **stop** leg of each held position's bracket upward as the trade goes
+your way. Each cycle it advances the position's high-water mark and tightens the
+stop toward `high_water − (ATR multiple × ATR)` (default multiple **3.0**). It is
+deliberately conservative: the stop only ever **tightens** — never loosens, and is
+never moved above the live price — the take-profit leg is left untouched, and it
+only ever moves an **existing** bracket stop (it never creates one). It defaults to
+**dry-run** (`on`), which logs the intended move *without* amending the broker
+order, so you can watch it behave before letting it act; turn dry-run off to let it
+actually amend stops. Paper-only, like everything else.
 
 ---
 
@@ -192,7 +208,8 @@ experiment, and check the **auto-actions** it reports.
 > momentum + regime only** — sentiment and fundamentals are excluded because
 > point-in-time historical news/fundamentals aren't available and using today's
 > values would be look-ahead bias. Fills are at the next bar's open with slippage
-> + commission; stops/targets checked intrabar. Survivorship bias and IEX-only
+> + commission; stops/targets checked intrabar and **gap-aware** — a gap-through
+> stop fills at the (worse) open, not the stop price. Survivorship bias and IEX-only
 > data coverage still apply — interpret conservatively.
 
 ---

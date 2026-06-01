@@ -104,14 +104,17 @@ The tabs at a glance:
   validation.
 - **History** — account P&L and equity curve over time (Alpaca-computed) plus a
   filled-order trade log.
-- **Settings** — broker/safety status, auto-trade toggle, signal weights,
-  sentiment/fundamentals tuning, quant controls, risk limits, and watchlist.
+- **Settings** — broker/safety status, auto-trade toggle, a trailing-stop
+  ratchet (tightens held positions' bracket stops as price advances; dry-run by
+  default), signal weights, sentiment/fundamentals tuning, quant controls, risk
+  limits, and watchlist.
 
 ### Backtesting honesty
 Backtests use **technical + volatility only**. Point-in-time historical news and
 fundamentals aren't available, so including today's values would be look-ahead
 bias. Fills execute at the next bar's open with configurable slippage and
-commission; there is no look-ahead and stops/targets are checked intrabar.
+commission; there is no look-ahead and stops/targets are checked intrabar
+(gap-aware — a gap-through stop fills at the worse open, not the stop price).
 Survivorship bias and IEX-only data coverage still apply — interpret results
 conservatively.
 
