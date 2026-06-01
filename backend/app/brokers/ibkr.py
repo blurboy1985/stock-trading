@@ -53,18 +53,26 @@ def _connect() -> Any:
         if _ib is None:
             _ib = _ib_class()()
             try:
-                _ib.RequestTimeout = 8
+                _ib.RequestTimeout = 2
             except Exception:
                 pass
         if not _ib.isConnected():
-            try:
-                _ib.connect(settings.ibkr_host, settings.ibkr_port, clientId=settings.ibkr_client_id, timeout=5)
-            except Exception as exc:  # noqa: BLE001
+            last_exc: Exception | None = None
+            connected = False
+            client_ids = [settings.ibkr_client_id, settings.ibkr_client_id + 1, settings.ibkr_client_id + 2]
+            for client_id in dict.fromkeys(client_ids):
+                try:
+                    _ib.connect(settings.ibkr_host, settings.ibkr_port, clientId=client_id, timeout=5)
+                    connected = True
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    last_exc = exc
+            if not connected:
                 raise BrokerUnavailable(
                     "IBKR is not connected. Start TWS/IB Gateway, enable Socket API, "
                     f"and verify IBKR_HOST={settings.ibkr_host} IBKR_PORT={settings.ibkr_port} "
                     f"IBKR_CLIENT_ID={settings.ibkr_client_id}."
-                ) from exc
+                ) from last_exc
         return _ib
 
 
@@ -270,22 +278,37 @@ def _get_positions_unlocked() -> list[dict[str, Any]]:
         qty = safe_float(getattr(item, "position", 0))
         avg = safe_float(getattr(item, "averageCost", 0))
         price = safe_float(getattr(item, "marketPrice", 0)) or get_latest_trade_price(sym) or avg
-        row = _position_row(sym, qty, avg)
-        row["exchange"] = getattr(c, "exchange", "SMART") or "SMART"
-        row["current_price"] = price
-        row["lastday_price"] = price
-        row["market_value"] = safe_float(getattr(item, "marketValue", 0)) or qty * price
-        row["unrealized_pl"] = safe_float(getattr(item, "unrealizedPNL", 0)) or row["market_value"] - row["cost_basis"]
-        row["unrealized_plpc"] = (row["unrealized_pl"] / row["cost_basis"]) if row["cost_basis"] else 0.0
-        out.append(row)
+        mv = safe_float(getattr(item, "marketValue", 0)) or qty * price
+        cost = qty * avg
+        upl = safe_float(getattr(item, "unrealizedPNL", 0)) or mv - cost
+        out.append({
+            "symbol": sym,
+            "qty": qty,
+            "qty_available": qty,
+            "avg_entry_price": avg,
+            "current_price": price,
+            "lastday_price": price,
+            "market_value": mv,
+            "cost_basis": cost,
+            "unrealized_pl": upl,
+            "unrealized_plpc": (upl / cost) if cost else 0.0,
+            "unrealized_intraday_pl": 0.0,
+            "unrealized_intraday_plpc": 0.0,
+            "change_today": 0.0,
+            "asset_class": "us_equity",
+            "exchange": getattr(c, "exchange", "SMART") or "SMART",
+            "side": "long" if qty >= 0 else "short",
+        })
     if out:
         return out
 
     try:
-        rows = ib.reqPositions() or []
+        rows = ib.positions(account) if account else ib.positions()
     except Exception:
+        rows = []
+    if not rows:
         try:
-            rows = ib.positions(account) or []
+            rows = ib.reqPositions() or []
         except Exception:
             rows = []
     for p in rows:
@@ -834,7 +857,36 @@ def get_news(symbols: list[str], limit: int = 20, include_external: bool = False
 
 
 def get_most_actives(top: int = 100, by: str = "volume") -> list[str]:
-    return []
+    """Best-effort most-active US stock universe for IBKR installs.
+
+    IBKR does not expose the Alpaca screener API this app originally used, so
+    use Yahoo Finance's no-key predefined screener. If Yahoo is unavailable,
+    fall back to the curated core liquid universe instead of collapsing the scan
+    to the user's watchlist only.
+    """
+    limit = max(1, min(int(top or 100), 250))
+    try:
+        import yfinance as yf
+
+        response = yf.screen("most_actives", count=limit)
+        quotes = response.get("quotes", []) if isinstance(response, dict) else []
+        symbols = []
+        for quote in quotes:
+            symbol = str(quote.get("symbol") or "").strip().upper()
+            quote_type = str(quote.get("quoteType") or "").upper()
+            if not symbol or quote_type not in {"EQUITY", ""}:
+                continue
+            if symbol.startswith("^") or "." in symbol:
+                continue
+            symbols.append(symbol)
+        if symbols:
+            return list(dict.fromkeys(symbols))[:limit]
+    except Exception:  # noqa: BLE001 — screener is best-effort
+        pass
+
+    from ..strategies.data.universe import CORE_LIQUID_UNIVERSE
+
+    return CORE_LIQUID_UNIVERSE[:limit]
 
 
 def sync_watchlist(symbols: list[str], name: str = "StockSim") -> dict[str, Any]:

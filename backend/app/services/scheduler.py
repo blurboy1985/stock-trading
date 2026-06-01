@@ -34,9 +34,24 @@ LATEST: dict[str, Any] = {
     "message": None,
     "errors": {},
     "refresh_status": "idle",
+    "universe_signature": None,
 }
 
 REFRESH_MINUTES = 15
+
+
+
+
+def _universe_signature() -> dict[str, object] | None:
+    try:
+        cfg = runtime_settings.get_all()
+    except Exception:  # noqa: BLE001 — settings lookup must not break refresh
+        return None
+    return {
+        "benchmark_symbol": cfg.get("benchmark_symbol"),
+        "universe_source": cfg.get("universe_source"),
+        "universe_size": cfg.get("universe_size"),
+    }
 
 
 def _market_open() -> bool:
@@ -69,6 +84,7 @@ def run_cycle(force: bool = False) -> dict[str, Any]:
                 message=message,
                 errors={},
                 refresh_status="skipped",
+                universe_signature=None,
             )
             return {"skipped": "no credentials", "message": message}
         if not force and not _market_open():
@@ -100,6 +116,8 @@ def run_cycle(force: bool = False) -> dict[str, Any]:
                 log.exception("trailing-stop pass failed")
                 trail = {"error": "exception"}
 
+        universe_signature = _universe_signature()
+
         LATEST.update(
             recommendations=reco.get("recommendations", []),
             top_buys=reco.get("top_buys", []),
@@ -110,6 +128,7 @@ def run_cycle(force: bool = False) -> dict[str, Any]:
             message=reco.get("message"),
             errors=reco.get("errors", {}),
             refresh_status="complete",
+            universe_signature=universe_signature,
         )
         return {
             "recommendations": len(reco.get("recommendations", [])),

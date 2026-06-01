@@ -24,6 +24,16 @@ const signClass = (n: number | null | undefined) =>
 const fmtDateTime = (d: string | null | undefined) =>
   d ? new Date(d).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—";
 
+const fmtSgtDateTime = (d: string | null | undefined) =>
+  d
+    ? new Date(d).toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "Asia/Singapore",
+        timeZoneName: "short",
+      })
+    : "—";
+
 function orderStatusClass(s: string): string {
   const st = s.toLowerCase();
   if (st === "filled") return "bg-buy/15 text-buy border-buy/40";
@@ -368,7 +378,7 @@ export function Dashboard() {
               <tbody>
                 {openOrders.map((o) => (
                   <tr key={o.id} className="border-t border-edge">
-                    <td className="py-2 pr-3 text-slate-400">{fmtDateTime(o.submitted_at)}</td>
+                    <td className="py-2 pr-3 text-slate-400">{fmtSgtDateTime(o.submitted_at)}</td>
                     <td className="pr-3 font-semibold">
                       <Link to={`/ticker/${o.symbol}`} className="hover:text-accent">
                         {o.symbol}

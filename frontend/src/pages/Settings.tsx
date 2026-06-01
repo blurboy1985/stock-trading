@@ -28,7 +28,10 @@ export function Settings() {
 
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.updateSettings(body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["reco"] });
+    },
   });
   const addSym = useMutation({
     mutationFn: (s: string) => api.addSymbol(s),
