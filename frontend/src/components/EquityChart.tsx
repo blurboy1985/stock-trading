@@ -6,6 +6,20 @@ interface Point {
   equity: number;
 }
 
+// lightweight-charts requires data strictly ascending and unique by time.
+// History can contain multiple points on the same calendar day, which collapse
+// to an identical YYYY-MM-DD time and trip an assertion. Keep the last value
+// per day and sort ascending.
+function toSeriesData(points: Point[]) {
+  const byDay = new Map<string, number>();
+  for (const p of points) {
+    byDay.set(p.date.slice(0, 10), p.equity);
+  }
+  return [...byDay.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([time, value]) => ({ time: time as any, value }));
+}
+
 // Strategy vs. benchmark equity-curve line chart.
 export function EquityChart({
   strategy,
@@ -32,9 +46,7 @@ export function EquityChart({
     chartRef.current = chart;
 
     const stratSeries = chart.addSeries(LineSeries, { color: "#5b2bd9", lineWidth: 2 });
-    stratSeries.setData(
-      strategy.map((p) => ({ time: p.date.slice(0, 10) as any, value: p.equity })),
-    );
+    stratSeries.setData(toSeriesData(strategy));
 
     if (benchmark && benchmark.length) {
       const benchSeries = chart.addSeries(LineSeries, {
@@ -42,9 +54,7 @@ export function EquityChart({
         lineWidth: 1,
         lineStyle: 2,
       });
-      benchSeries.setData(
-        benchmark.map((p) => ({ time: p.date.slice(0, 10) as any, value: p.equity })),
-      );
+      benchSeries.setData(toSeriesData(benchmark));
     }
     chart.timeScale().fitContent();
     return () => chart.remove();
