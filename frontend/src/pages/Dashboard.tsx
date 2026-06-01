@@ -18,24 +18,42 @@ import {
 import { RegimeBanner } from "../components/RegimeBanner";
 import { SectionGuide } from "../components/SectionGuide";
 
-const signClass = (n: number | null | undefined) =>
-  n == null || n === 0 ? "text-slate-200" : n > 0 ? "text-buy" : "text-sell";
+const finiteNumber = (n: number | string | null | undefined): number | null => {
+  if (n == null || n === "") return null;
+  const value = typeof n === "number" ? n : Number(n);
+  return Number.isFinite(value) ? value : null;
+};
 
-const fmtDateTime = (d: string | null | undefined) =>
-  d ? new Date(d).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "—";
+const numeric = (n: number | string | null | undefined) => finiteNumber(n) ?? 0;
 
-const fmtSgtDateTime = (d: string | null | undefined) =>
-  d
-    ? new Date(d).toLocaleString(undefined, {
+const signClass = (n: number | string | null | undefined) => {
+  const value = finiteNumber(n);
+  return value == null || value === 0 ? "text-slate-200" : value > 0 ? "text-buy" : "text-sell";
+};
+
+const fmtDateTime = (d: string | null | undefined) => {
+  if (!d) return "—";
+  const date = new Date(d);
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+};
+
+const fmtSgtDateTime = (d: string | null | undefined) => {
+  if (!d) return "—";
+  const date = new Date(d);
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : date.toLocaleString(undefined, {
         dateStyle: "medium",
         timeStyle: "short",
         timeZone: "Asia/Singapore",
         timeZoneName: "short",
-      })
-    : "—";
+      });
+};
 
-function orderStatusClass(s: string): string {
-  const st = s.toLowerCase();
+function orderStatusClass(s: string | null | undefined): string {
+  const st = (s ?? "").toLowerCase();
   if (st === "filled") return "bg-buy/15 text-buy border-buy/40";
   if (["canceled", "cancelled", "rejected", "expired"].includes(st))
     return "bg-sell/15 text-sell border-sell/40";
@@ -124,15 +142,15 @@ export function Dashboard() {
   const openOrders: OrderRow[] = orders.data?.orders ?? [];
   const acts: Activity[] = activities.data?.activities ?? [];
 
-  const dayPl = acct ? acct.equity - acct.last_equity : 0;
-  const dayPlPct = acct && acct.last_equity ? dayPl / acct.last_equity : 0;
+  const dayPl = acct ? numeric(acct.equity) - numeric(acct.last_equity) : 0;
+  const dayPlPct = acct && numeric(acct.last_equity) ? dayPl / numeric(acct.last_equity) : 0;
 
   const totals = positions.reduce(
     (a, pos) => ({
-      mv: a.mv + pos.market_value,
-      cost: a.cost + pos.cost_basis,
-      pl: a.pl + pos.unrealized_pl,
-      day: a.day + pos.unrealized_intraday_pl,
+      mv: a.mv + numeric(pos.market_value),
+      cost: a.cost + numeric(pos.cost_basis),
+      pl: a.pl + numeric(pos.unrealized_pl),
+      day: a.day + numeric(pos.unrealized_intraday_pl),
     }),
     { mv: 0, cost: 0, pl: 0, day: 0 },
   );
@@ -183,7 +201,7 @@ export function Dashboard() {
         <Stat
           label="Cash"
           value={fmtUsd(acct?.cash)}
-          sub={`${fmtPct(acct?.equity ? (acct.cash / acct.equity) : 0)} of equity`}
+          sub={`${fmtPct(acct?.equity ? (numeric(acct.cash) / numeric(acct.equity)) : 0)} of equity`}
         />
         <Stat
           label="Buying Power"
