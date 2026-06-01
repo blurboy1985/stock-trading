@@ -116,7 +116,7 @@ export function Recommendations() {
 
       {buy.isError && <ErrorBanner message={(buy.error as Error).message} />}
       {recs.length === 0 && (
-        <ErrorBanner message="No recommendations. Configure Alpaca credentials and refresh." />
+        <ErrorBanner message="No recommendations. Configure IBKR/TWS settings and refresh." />
       )}
       {recs.length > 0 && shown.length === 0 && (
         <p className="text-slate-400 text-sm py-6 text-center">

@@ -33,7 +33,7 @@ export function Automation() {
   const confirm = useMutation({
     mutationFn: (p: Proposal) => api.confirmProposal(p.id),
     onSuccess: (data, p) => {
-      const oid = data.proposal.result ?? data.order?.alpaca_order_id ?? "";
+      const oid = data.proposal.result ?? data.order?.broker_order_id ?? data.order?.alpaca_order_id ?? "";
       pushBanner(
         "ok",
         `✓ Placed ${p.side.toUpperCase()} ${qtyLabel(p)} ${p.symbol}${oid ? ` (order ${oid})` : ""}`,

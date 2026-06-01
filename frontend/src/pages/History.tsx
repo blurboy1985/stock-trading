@@ -40,7 +40,7 @@ export function History() {
       <SectionGuide id="history" />
       <div className="flex items-center justify-between">
         <div className="text-sm text-slate-400">
-          Account performance &amp; trade history — read live from your Alpaca account.
+          Account performance &amp; trade history — read live from your configured broker account.
         </div>
         <div className="flex gap-1">
           {PERIODS.map((p) => (
@@ -133,9 +133,9 @@ export function History() {
       </Panel>
 
       <p className="text-[11px] text-slate-500">
-        P&amp;L is Alpaca's account equity change over the selected period
+        P&amp;L is the broker account equity change over the selected period
         (realized + unrealized). The same trades and balances appear when you log
-        in to the Alpaca site.
+        in to TWS/Gateway.
       </p>
     </div>
   );

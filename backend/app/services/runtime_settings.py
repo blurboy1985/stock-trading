@@ -69,10 +69,10 @@ DEFAULTS: dict[str, Any] = {
     "context_signal_mode": "filter",
     "context_veto_threshold": 0.4,  # |score| below -this vetoes a BUY (filter mode)
     # ── News sources (sentiment ingest) ───────────────────────────────
-    # Which feeds power the sentiment signal. "alpaca" (Benzinga) is the
-    # default batched feed; extra sources are fetched per-symbol and merged
-    # with event-level de-dup so duplicate coverage can't bias the score.
-    "news_sources": ["alpaca"],          # subset of news_sources.ALL_SOURCES
+    # Which feeds power the sentiment signal. Yahoo Finance is the default
+    # no-key feed; extra sources are fetched per-symbol and merged with
+    # event-level de-dup so duplicate coverage can't bias the score.
+    "news_sources": ["yfinance"],        # subset of news_sources.ALL_SOURCES
     "news_scope": "watchlist",           # "watchlist" | "universe" for extra sources
     "news_per_source_limit": 15,         # headlines fetched per extra source/symbol
 }

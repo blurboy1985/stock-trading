@@ -84,9 +84,8 @@ export function Dashboard() {
   });
   const cancel = useMutation({
     mutationFn: (id: string) => api.cancelOrder(id),
-    // Alpaca cancellation is async — the order sits in `pending_cancel` for a
-    // moment, so an immediate refetch would still show it. Drop it from the
-    // cache right away for instant feedback; the 10s poll reconciles after.
+    // Broker cancellation can be async — the order may remain pending briefly.
+    // Drop it from the cache right away for instant feedback; the 10s poll reconciles after.
     onSuccess: (_data, id) => {
       qc.setQueryData<{ orders: OrderRow[] }>(["orders", "open"], (prev) =>
         prev ? { orders: prev.orders.filter((o) => o.id !== id) } : prev,
@@ -101,7 +100,7 @@ export function Dashboard() {
   if (p && !p.configured) {
     return (
       <ErrorBanner
-        message={p.message ?? "Alpaca credentials are not configured. Add them in backend/.env."}
+        message={p.message ?? "IBKR is not configured or not connected. Start TWS/Gateway and check backend/.env."}
       />
     );
   }
@@ -465,8 +464,8 @@ export function Dashboard() {
       </Panel>
 
       <p className="text-[11px] text-slate-500">
-        Positions, orders, balances and activity are read live from your Alpaca
-        {acct?.is_paper ? " paper" : ""} account — the same data shown on alpaca.markets.
+        Positions, orders, balances and activity are read live from your IBKR
+        {acct?.is_paper ? " paper" : ""} session via TWS/Gateway.
       </p>
     </div>
   );

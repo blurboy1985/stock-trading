@@ -13,7 +13,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from .. import alpaca_client as ac
+from .. import broker_client as ac
 from ..config import settings
 from ..db import SessionLocal
 from ..models import TradeProposal
@@ -286,7 +286,7 @@ def _execute(db: Any, row: TradeProposal) -> dict[str, Any]:
             # (OCO stop/target) legs first. A plain market sell would leave those
             # legs working — one could later fire a second sell and open a short
             # at the broker, which validate_order can't prevent (the leg lives at
-            # Alpaca). Proposals always exit the full held qty, so a full close
+            # broker). Proposals always exit the full held qty, so a full close
             # is equivalent.
             res = portfolio.close_position(row.symbol, source="auto")
         else:
@@ -298,7 +298,7 @@ def _execute(db: Any, row: TradeProposal) -> dict[str, Any]:
         return {"ok": False, "error": str(e)}
     order = res.get("order") or {}
     row.status = "executed"
-    row.result = order.get("alpaca_order_id") or order.get("id") or "submitted"
+    row.result = order.get("broker_order_id") or order.get("alpaca_order_id") or order.get("id") or "submitted"
     row.decided_at = _utcnow()
     return {"ok": True, "order": order}
 

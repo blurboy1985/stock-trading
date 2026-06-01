@@ -1,7 +1,8 @@
 """Multi-source news aggregation with event-level de-duplication.
 
-Alpaca's news feed is Benzinga-only. Pulling additional providers (Yahoo
-Finance, Finnhub, Marketaux, NewsAPI) broadens publisher coverage — but naively
+Yahoo Finance is the default no-key feed. Pulling additional providers
+(Finnhub, Marketaux, NewsAPI, or the legacy Alpaca/Benzinga fallback) broadens
+publisher coverage — but naively
 concatenating them *biases* the sentiment signal: the same story reported by ten
 outlets becomes ten weighted "votes" and manufactures fake consensus (low
 dispersion ⇒ inflated confidence). So before scoring we **cluster articles by
@@ -20,11 +21,11 @@ import re
 import time
 from typing import Any
 
-from .. import alpaca_client as ac
+from .. import broker_client as ac
 from ..config import settings
 
 # Sources usable with no extra key (yfinance ships as a fundamentals dep).
-ALWAYS_AVAILABLE = ("alpaca", "yfinance")
+ALWAYS_AVAILABLE = ("yfinance", "alpaca")
 # Sources gated on an API key in the environment.
 KEYED_SOURCES = ("finnhub", "marketaux", "newsapi")
 ALL_SOURCES = (*ALWAYS_AVAILABLE, *KEYED_SOURCES)
@@ -103,7 +104,33 @@ def _http_get_json(url: str, params: dict[str, Any], timeout: float = 6.0) -> An
 
 
 def _yfinance_one(symbol: str, limit: int) -> list[dict[str, Any]]:
-    return ac._yf_news([symbol], limit)
+    """Fetch Yahoo Finance news directly so IBKR installs need no Alpaca client."""
+    try:
+        import yfinance as yf
+
+        rows = getattr(yf.Ticker(symbol), "news", None) or []
+    except Exception:  # noqa: BLE001
+        return []
+    out: list[dict[str, Any]] = []
+    for n in rows[:limit]:
+        content = n.get("content") if isinstance(n, dict) else None
+        data = content if isinstance(content, dict) else n
+        headline = (data.get("title") or data.get("headline") or "").strip()
+        if not headline:
+            continue
+        provider = data.get("provider") or {}
+        click = data.get("clickThroughUrl") or data.get("canonicalUrl") or {}
+        published = data.get("pubDate") or data.get("providerPublishTime")
+        created = _parse_dt(published)
+        out.append({
+            "headline": headline,
+            "summary": data.get("summary") or "",
+            "symbols": [symbol],
+            "source": provider.get("displayName") if isinstance(provider, dict) else "Yahoo Finance",
+            "url": click.get("url") if isinstance(click, dict) else data.get("link") or "",
+            "created_at": created.isoformat() if created else None,
+        })
+    return out
 
 
 def _finnhub_one(symbol: str, limit: int) -> list[dict[str, Any]]:
@@ -305,19 +332,18 @@ def build_symbol_news(
 ) -> dict[str, list[dict[str, Any]]]:
     """Merge configured sources into per-symbol, event-deduped news.
 
-    ``base_news`` is the already-fetched Alpaca/Benzinga news for the whole
-    universe (one batched call). When extra sources are enabled we fetch them
-    per-symbol for the scoped subset (watchlist by default), combine, and
-    collapse to distinct events. Symbols outside the scope keep the Alpaca feed
-    untouched — identical to the previous behavior.
+    ``base_news`` is the already-fetched broker/default news for the whole
+    universe when available. Configured sources are fetched per-symbol for the
+    scoped subset (watchlist by default), combined, and collapsed to distinct
+    events. With the IBKR migration, Yahoo Finance is the default no-key source.
     """
-    sources = list(cfg.get("news_sources") or ["alpaca"])
+    sources = list(cfg.get("news_sources") or ["yfinance"])
     usable = set(available_sources())
     extra = [s for s in sources if s != "alpaca" and s in usable]
 
     out = {s: list(base_news.get(s, [])) for s in universe}
     if not extra:
-        return out  # nothing to add → current Alpaca-only behavior
+        return out
 
     include_alpaca = "alpaca" in sources
     scope = cfg.get("news_scope", "watchlist")

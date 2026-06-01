@@ -13,7 +13,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from .. import alpaca_client as ac
+from .. import broker_client as ac
 from ..config import settings
 from ..db import SessionLocal
 from ..models import Recommendation, WatchlistItem
@@ -32,7 +32,7 @@ _ATR_FLOOR = 0.005
 def get_universe() -> list[str]:
     """The user's watchlist from the DB, falling back to the env default.
 
-    This is the *watchlist* (used for the Alpaca sync and Settings views), not
+    This is the *watchlist* (used for broker sync and Settings views), not
     necessarily the full set of symbols scored each cycle — see
     :func:`build_universe`.
     """
@@ -108,14 +108,14 @@ def generate(persist: bool = True) -> dict[str, Any]:
     if not settings.has_credentials:
         return {
             "configured": False,
-            "message": "Alpaca credentials not set — add them in backend/.env.",
+            "message": "IBKR is not configured — set IBKR_HOST, IBKR_PORT and IBKR_CLIENT_ID in backend/.env, then start TWS/Gateway.",
             "recommendations": [],
         }
 
     cfg = runtime_settings.get_all()
     weights = cfg["weights"]
     universe, watchlist_set = build_universe(cfg)
-    # Alpaca/Benzinga in one batched call, then merge any opt-in extra sources
+    # Broker/news fallback in one batched call, then merge any opt-in extra sources
     # (Yahoo/Finnhub/Marketaux/NewsAPI) per-symbol with event-level de-dup so
     # duplicate coverage can't bias the sentiment signal.
     news = news_sources.build_symbol_news(

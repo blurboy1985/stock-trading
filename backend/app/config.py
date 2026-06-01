@@ -15,7 +15,16 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    # ── Alpaca ────────────────────────────────────────────────────────
+    # ── Broker ────────────────────────────────────────────────────────
+    broker: str = "ibkr"
+    ibkr_host: str = "127.0.0.1"
+    ibkr_port: int = 4002
+    ibkr_client_id: int = 11
+    ibkr_account: str = ""
+    ibkr_trading_mode: str = "paper"
+    trading_enabled: bool = False
+
+    # ── Legacy Alpaca settings (kept only for backwards-compatible env parsing)
     apca_api_key_id: str = ""
     apca_api_secret_key: str = ""
     alpaca_base_url: str = "https://paper-api.alpaca.markets"
@@ -51,11 +60,17 @@ class Settings(BaseSettings):
 
     @property
     def is_paper(self) -> bool:
-        """True when pointed at the paper endpoint (no real money)."""
+        """True when configured for paper/simulated trading."""
+        if self.broker.lower() == "ibkr":
+            return self.ibkr_trading_mode.lower() != "live"
         return "paper" in self.alpaca_base_url.lower()
 
     @property
     def has_credentials(self) -> bool:
+        """Whether the selected broker has enough configuration to attempt use."""
+        if self.broker.lower() == "ibkr":
+            # IBKR uses the local TWS/Gateway socket, not API keys. Connection is lazy.
+            return bool(self.ibkr_host and self.ibkr_port and self.ibkr_client_id)
         return bool(self.apca_api_key_id and self.apca_api_secret_key)
 
     @property

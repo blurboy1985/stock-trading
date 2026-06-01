@@ -8,10 +8,12 @@ pydantic>=2.7
 pydantic-settings>=2.3
 
 # Data / market
-alpaca-py>=0.30
+alpaca-py>=0.30  # legacy fallback only; default broker is IBKR
+ib_insync>=0.9.86
 yfinance>=0.2.40
 pandas>=2.2
 numpy>=1.26
+tzdata>=2024.1
 
 # Sentiment
 vaderSentiment>=3.3.2

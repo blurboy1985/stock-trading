@@ -39,7 +39,7 @@ const STEPS: Step[] = [
   {
     badge: "Welcome",
     title: "I'll walk you through placing a trade",
-    body: "Think of me as your broker. In the next minute I'll show you exactly where to find an idea, how to read it, how to buy it, and how to sell or trim what's already in your book. Everything here is paper money on Alpaca — so it's the perfect place to build the habit before any real capital is involved.",
+    body: "Think of me as your broker. In the next minute I'll show you exactly where to find an idea, how to read it, how to buy it, and how to sell or trim what's already in your book. Everything here defaults to IBKR paper mode — so it's the perfect place to build the habit before any real capital is involved.",
     cues: [
       "Your live status sits top-right of the header: a green ● PAPER badge means no real money is at stake.",
       "Use Back / Next below to move at your own pace, or jump straight to a screen with the blue button.",

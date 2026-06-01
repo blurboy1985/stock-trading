@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from .. import alpaca_client as ac
+from .. import broker_client as ac
 from ..backtest.engine import BacktestConfig, run_backtest
 from ..backtest.sweep import parameter_sweep
 from ..backtest.walkforward import walk_forward
@@ -61,7 +61,7 @@ def _fetch_bars(req: "BacktestRequest") -> dict:
             df = ac.get_bars(sym, start=req.start, end=req.end)
             if not df.empty:
                 bars_by_symbol[sym] = df
-    except ac.AlpacaUnavailable as e:
+    except ac.BrokerUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Bars fetch failed: {e}")

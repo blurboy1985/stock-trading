@@ -25,13 +25,10 @@ def _seed_watchlist() -> None:
             db.commit()
 
 
-def _sync_alpaca_watchlist() -> None:
-    """Best-effort mirror of the DB watchlist to the Alpaca account on boot, so
-    it's visible when you log in to the Alpaca site. Never blocks startup."""
-    if not settings.has_credentials:
-        return
+def _sync_broker_watchlist() -> None:
+    """Best-effort broker watchlist sync. IBKR adapter intentionally no-ops."""
     try:
-        from . import alpaca_client as ac
+        from . import broker_client as ac
         from .services import recommender
 
         ac.sync_watchlist(recommender.get_universe())
@@ -43,7 +40,7 @@ def _sync_alpaca_watchlist() -> None:
 async def lifespan(app: FastAPI):
     init_db()
     _seed_watchlist()
-    _sync_alpaca_watchlist()
+    _sync_broker_watchlist()
     # Scheduler is started here in Phase 4.
     try:
         from .services.scheduler import start_scheduler, stop_scheduler
@@ -58,7 +55,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Stock Trading Simulator",
     version="0.1.0",
-    description="Multi-signal US-stock paper-trading simulator on Alpaca.",
+    description="Multi-signal US-stock trading simulator using a broker adapter (IBKR by default).",
     lifespan=lifespan,
 )
 
@@ -77,7 +74,9 @@ def health():
         "status": "ok",
         "has_credentials": settings.has_credentials,
         "is_paper": settings.is_paper,
-        "live_trading_enabled": settings.live_trading and not settings.is_paper,
+        "broker": settings.broker,
+        "trading_enabled": settings.trading_enabled,
+        "live_trading_enabled": settings.trading_enabled and settings.live_trading and not settings.is_paper,
     }
 
 

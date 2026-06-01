@@ -1,13 +1,13 @@
 """Portfolio snapshot + risk-gated order placement.
 
-Order flow: risk.validate_order -> live-trading safety gate -> Alpaca submit ->
-persist a local OrderRecord. Alpaca remains the source of truth for fills.
+Order flow: risk.validate_order -> app trading safety gate -> broker submit ->
+persist a local OrderRecord. The broker remains the source of truth for fills.
 """
 from __future__ import annotations
 
 from typing import Any
 
-from .. import alpaca_client as ac
+from .. import broker_client as ac
 from ..config import settings
 from ..db import SessionLocal
 from ..models import OrderRecord
@@ -23,7 +23,7 @@ def snapshot() -> dict[str, Any]:
     if not settings.has_credentials:
         return {
             "configured": False,
-            "message": "Alpaca credentials not set — add them in backend/.env.",
+            "message": "IBKR is not configured — set IBKR_HOST, IBKR_PORT and IBKR_CLIENT_ID in backend/.env, then start TWS/Gateway.",
             "account": None,
             "positions": [],
         }
@@ -39,6 +39,8 @@ def _live_gate(confirm_live: bool) -> bool:
     explicit per-order confirmation from the caller (UI). Paper trading always
     passes (no real money at stake).
     """
+    if not settings.trading_enabled:
+        return False
     if settings.is_paper:
         return True
     return settings.live_trading and confirm_live
@@ -57,7 +59,7 @@ def place_order(
     symbol = symbol.upper()
     snap = snapshot()
     if not snap["configured"]:
-        raise OrderRejected("Alpaca credentials not configured.")
+        raise OrderRejected("IBKR broker is not configured.")
     account, positions = snap["account"], snap["positions"]
 
     # Reference price for sizing / risk math.
@@ -78,8 +80,9 @@ def place_order(
 
     if not _live_gate(confirm_live):
         raise OrderRejected(
-            "Live trading is not authorized. Real-money orders require "
-            "LIVE_TRADING=true, a live endpoint, and explicit confirmation."
+            "Trading is not authorized. Orders require TRADING_ENABLED=true; "
+            "real-money orders also require LIVE_TRADING=true, live IBKR mode, "
+            "and explicit confirmation."
         )
 
     result = ac.submit_order(
@@ -90,12 +93,13 @@ def place_order(
         limit_price=limit_price,
         stop_loss=decision.stop_loss,
         take_profit=decision.take_profit,
+        confirm_live=confirm_live,
     )
 
     with SessionLocal() as db:
         db.add(
             OrderRecord(
-                alpaca_order_id=result.get("alpaca_order_id"),
+                alpaca_order_id=result.get("broker_order_id") or result.get("alpaca_order_id"),
                 symbol=symbol,
                 side=side.lower(),
                 qty=decision.qty,
@@ -130,7 +134,7 @@ def close_position(
     symbol = symbol.upper()
     snap = snapshot()
     if not snap["configured"]:
-        raise OrderRejected("Alpaca credentials not configured.")
+        raise OrderRejected("IBKR broker is not configured.")
 
     held = next((p for p in snap["positions"] if p["symbol"] == symbol), None)
     if not held or float(held["qty"]) <= 0:
@@ -138,16 +142,17 @@ def close_position(
 
     if not _live_gate(confirm_live):
         raise OrderRejected(
-            "Live trading is not authorized. Real-money orders require "
-            "LIVE_TRADING=true, a live endpoint, and explicit confirmation."
+            "Trading is not authorized. Orders require TRADING_ENABLED=true; "
+            "real-money orders also require LIVE_TRADING=true, live IBKR mode, "
+            "and explicit confirmation."
         )
 
-    result = ac.close_position(symbol)
+    result = ac.close_position(symbol, confirm_live=confirm_live)
 
     with SessionLocal() as db:
         db.add(
             OrderRecord(
-                alpaca_order_id=result.get("alpaca_order_id"),
+                alpaca_order_id=result.get("broker_order_id") or result.get("alpaca_order_id"),
                 symbol=symbol,
                 side="sell",
                 qty=float(held["qty"]),

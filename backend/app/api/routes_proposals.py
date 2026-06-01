@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from .. import alpaca_client as ac
+from .. import broker_client as ac
 from ..services import proposals
 
 router = APIRouter(prefix="/api/proposals", tags=["proposals"])
@@ -20,7 +20,7 @@ def confirm_all():
     """Execute every confirmable (non-blocked) pending proposal."""
     try:
         return proposals.confirm_all()
-    except ac.AlpacaUnavailable as e:
+    except ac.BrokerUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
 
 
@@ -32,7 +32,7 @@ def confirm(proposal_id: int):
         raise HTTPException(status_code=404, detail=str(e))
     except proposals.ProposalError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except ac.AlpacaUnavailable as e:
+    except ac.BrokerUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
 
 

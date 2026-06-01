@@ -33,8 +33,8 @@ const GUIDES: Record<string, Guide> = {
     what: (
       <>
         Your live account command center. Everything here is read in real time
-        from your Alpaca paper account — the same balances, positions and orders
-        you'd see on alpaca.markets — and refreshes on its own every few seconds.
+        from your IBKR paper session via TWS/Gateway — balances, positions and orders
+        refresh on their own every few seconds.
       </>
     ),
     how: [
@@ -120,7 +120,7 @@ const GUIDES: Record<string, Guide> = {
     title: "History",
     what: (
       <>
-        Your realized track record, read live from Alpaca. It charts account
+        Your realized track record, read live from the configured broker. It charts account
         equity over time and lists the orders that actually filled.
       </>
     ),
@@ -129,7 +129,7 @@ const GUIDES: Record<string, Guide> = {
       <>{b("Trade History")} lists filled orders with date, side, quantity and type.</>,
       <>Click any symbol to revisit its chart.</>,
     ],
-    tip: <>P&L here is Alpaca's account equity change (realized + unrealized) over the period — the same numbers you'd see on the Alpaca site.</>,
+    tip: <>P&L here is the broker account equity change (realized + unrealized) over the period.</>,
   },
   settings: {
     title: "Settings",
@@ -141,10 +141,10 @@ const GUIDES: Record<string, Guide> = {
       </>
     ),
     how: [
-      <>{b("Broker & Safety")} confirms your Alpaca credentials and that you're locked to paper; {b("Automation")} toggles auto-propose.</>,
+      <>{b("Broker & Safety")} confirms your IBKR socket settings and that you're locked to paper; {b("Automation")} toggles auto-propose.</>,
       <>{b("Universe")} picks what gets scanned — the stable {b("Core liquid set")} is best for swing relative-strength. {b("Signal Weights")} and {b("Sentiment & Fundamentals")} shape the score (veto-only mode keeps sentiment/fundamentals out of the score and uses them only to block bad buys).</>,
       <>{b("Quant Controls")} and {b("Risk Limits")} hold the guardrails: regime gate, earnings blackout, sector cap, min agreement, position/exposure caps and ATR stops.</>,
-      <>{b("Watchlist")} manages your starred symbols (auto-synced to Alpaca).</>,
+      <>{b("Watchlist")} manages your starred symbols (broker sync is best-effort; IBKR is no-op).</>,
     ],
     tip: <>New here? The “Getting Started” panel further down replays the full broker's walkthrough of finding, buying and selling a name.</>,
   },

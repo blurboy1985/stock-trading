@@ -1,12 +1,13 @@
 # 📈 StockSim — Multi-Signal Stock Trading Simulator
 
-A US-stock **paper-trading simulator** that ingests market data from Alpaca,
-ranks the best stocks to buy/sell with a transparent multi-signal engine,
-monitors open positions, and lets you validate strategies with a rigorous
-backtester **before** risking real money.
+A US-stock **paper-trading simulator** that connects to Interactive Brokers
+(IBKR) through TWS or IB Gateway, ranks the best stocks to buy/sell with a
+transparent multi-signal engine, monitors open positions, and lets you validate
+strategies with a rigorous backtester **before** risking real money.
 
-Built on Alpaca so the *same code* trades paper or live — going live is a config
-change, not a rewrite.
+Built with a broker abstraction and an IBKR adapter. Paper mode is the safe
+default; live trading remains locked behind explicit configuration and per-order
+confirmation.
 
 > ⚠️ **Read this first.** This is a learning/simulation tool, not financial
 > advice. No screener reliably beats the market, and most retail algorithmic
@@ -20,7 +21,7 @@ change, not a rewrite.
 ## Architecture
 
 ```
-backend/    FastAPI + SQLite + Alpaca   (Python)
+backend/    FastAPI + SQLite + IBKR broker adapter   (Python)
 frontend/   React + Vite + TypeScript + Tailwind
 ```
 
@@ -40,11 +41,10 @@ composite that maps to **BUY / SELL / HOLD**. The backtester reuses the *exact
 same* signal functions, so backtested decisions match live decisions.
 
 **Safety** — every order passes `services/risk.py` (position-size cap, total
-exposure cap, buying-power check, stop-loss/take-profit bracket). The app runs
-**paper-only**: real-money orders would require all three of `LIVE_TRADING=true`
-in `.env`, a non-paper Alpaca endpoint, **and** an explicit per-order
-confirmation flag — and the UI never sends that flag, so every UI order is a
-paper order.
+exposure cap, buying-power check, stop-loss/take-profit controls). Order
+submission is disabled by default with `TRADING_ENABLED=false`. Real-money orders
+require `IBKR_TRADING_MODE=live`, `LIVE_TRADING=true`, `TRADING_ENABLED=true`,
+and an explicit per-order confirmation flag.
 
 Auto-trading (the scheduler acting on recommendations) is likewise **structurally
 limited to paper** — it cannot supply the per-order live confirmation, so it can
@@ -54,16 +54,22 @@ never place a real-money order.
 
 ## Setup
 
-### 1. Get free Alpaca paper credentials
-Sign up at <https://alpaca.markets>, open the **Paper Trading** dashboard, and
-generate an API key + secret.
+### 1. Start IBKR paper TWS or IB Gateway
+Log in to an IBKR paper session and enable **API → Socket Clients**. No API key is
+used for the normal IBKR socket API.
+
+Default ports:
+- IB Gateway paper: `127.0.0.1:4002`
+- TWS paper: `127.0.0.1:7497`
+- IB Gateway live: `127.0.0.1:4001`
+- TWS live: `127.0.0.1:7496`
 
 ### 2. Backend
 ```powershell
 cd backend
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
-copy .env.example .env       # then paste your APCA_API_KEY_ID / APCA_API_SECRET_KEY
+copy .env.example .env       # keep IBKR paper defaults, or set IBKR_PORT=7497 for TWS paper
 .venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
 ```
 Backend runs at <http://127.0.0.1:8000> (interactive docs at `/docs`).
@@ -76,8 +82,8 @@ npm run dev
 ```
 Open <http://localhost:5173>. The Vite dev server proxies `/api` to the backend.
 
-> The app runs **without** credentials too — endpoints return a clear
-> "not configured" message and the UI prompts you to add keys in Settings.
+> The app imports and starts even when TWS/Gateway is not running. Broker-backed
+> endpoints return clear "not connected" messages until the IBKR socket is ready.
 
 ---
 
@@ -102,7 +108,7 @@ The tabs at a glance:
   curve and metrics (Sharpe, max drawdown, win rate, profit factor) against an
   equal-weight buy-and-hold benchmark, with walk-forward + parameter-sweep
   validation.
-- **History** — account P&L and equity curve over time (Alpaca-computed) plus a
+- **History** — account P&L and equity curve over time plus a
   filled-order trade log.
 - **Settings** — broker/safety status, auto-trade toggle, a trailing-stop
   ratchet (tightens held positions' bracket stops as price advances; dry-run by
@@ -121,14 +127,12 @@ conservatively.
 ---
 
 ## Paper-only by design
-This app is a **paper-trading simulator** on the Alpaca API — it places paper
-orders only. The header stays **● PAPER**, auto-trading is structurally
-paper-only, and the live-trading kill switch (`LIVE_TRADING` + non-paper endpoint
-+ per-order confirmation) remains in the code but the UI does not surface a
-real-money order path. No real capital is at risk. Pursuing live trading would be
-a separate, deliberate step — and only after a strategy has shown an
-out-of-sample edge **and** weeks of profitable paper trading. See
-[GUIDE.md](GUIDE.md).
+This app defaults to **IBKR paper trading**. The header should stay **● PAPER**,
+`TRADING_ENABLED` defaults to `false`, and live trading requires a separate,
+deliberate configuration change plus explicit per-order confirmation. No real
+capital is at risk during the default setup. Pursuing live trading should only be
+considered after a strategy has shown an out-of-sample edge **and** weeks of
+profitable paper trading. See [GUIDE.md](GUIDE.md).
 
 ---
 

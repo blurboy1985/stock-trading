@@ -297,9 +297,15 @@ export interface AppSettings {
     available_sources: string[];
   };
   broker: {
+    name?: string;
     has_credentials: boolean;
     is_paper: boolean;
+    trading_enabled?: boolean;
     live_trading_enabled: boolean;
+    ibkr_host?: string;
+    ibkr_port?: number;
+    ibkr_client_id?: number;
+    ibkr_trading_mode?: string;
   };
 }
 

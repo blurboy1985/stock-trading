@@ -1,7 +1,7 @@
 """Pre-trade risk checks and position sizing.
 
 Every order — manual, auto, paper, or live — must pass ``validate_order`` before
-reaching Alpaca. This is the single chokepoint enforcing position-size caps,
+reaching the broker. This is the single chokepoint enforcing position-size caps,
 total-exposure caps, and buying-power limits, and it computes the protective
 stop-loss / take-profit bracket.
 """

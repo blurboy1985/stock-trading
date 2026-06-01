@@ -1,6 +1,6 @@
 """ORM models: persisted app state.
 
-Alpaca remains the source of truth for the brokerage account; these tables store
+The broker remains the source of truth for the brokerage account; these tables store
 the app's own layer — watchlist, recommendation history, signal snapshots, a
 local order/trade mirror, and backtest results.
 """
@@ -100,7 +100,7 @@ class TradeProposal(Base):
     blocked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     # pending / executed / rejected / failed / expired
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
-    # Alpaca order id on success, or the error message on failure.
+    # Broker order id on success, or the error message on failure.
     result: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(16), default="auto")
     is_paper: Mapped[bool] = mapped_column(default=True)
@@ -136,7 +136,7 @@ class BacktestRun(Base):
 class PositionTrail(Base):
     """High-water mark per held position, for the live trailing-stop ratchet.
 
-    Alpaca is the source of truth for the position itself; this just remembers
+    The broker is the source of truth for the position itself; this just remembers
     the highest close seen since entry so the scheduler can ratchet the bracket's
     stop leg up to ``high_water - k*ATR`` each cycle. ``entry_price`` lets us
     detect a re-opened/averaged position and reset the high-water mark.

@@ -14,7 +14,7 @@ from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from .. import alpaca_client as ac
+from .. import broker_client as ac
 from ..config import settings
 from . import proposals, recommender, runtime_settings, trailing
 

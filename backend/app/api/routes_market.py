@@ -5,7 +5,7 @@ import datetime as dt
 
 from fastapi import APIRouter, HTTPException, Query
 
-from .. import alpaca_client as ac
+from .. import broker_client as ac
 from ..config import settings
 from ..services import runtime_settings
 from ..strategies import regime as regime_mod
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/market", tags=["market"])
 def market_clock():
     try:
         return ac.get_clock()
-    except ac.AlpacaUnavailable as e:
+    except ac.BrokerUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
 
 
@@ -43,7 +43,7 @@ def market_regime():
     start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=400)
     try:
         df = ac.get_bars(bench, start=start)
-    except ac.AlpacaUnavailable as e:
+    except ac.BrokerUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Regime fetch failed: {e}")
@@ -55,7 +55,7 @@ def asset(symbol: str):
     """Company name / exchange / tradability for a symbol."""
     try:
         return ac.get_asset(symbol.upper())
-    except ac.AlpacaUnavailable as e:
+    except ac.BrokerUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:  # noqa: BLE001 — surface SDK errors as 502
         raise HTTPException(status_code=502, detail=f"Asset fetch failed: {e}")
@@ -65,7 +65,7 @@ def asset(symbol: str):
 def quote(symbol: str):
     try:
         return ac.get_latest_quote(symbol.upper())
-    except ac.AlpacaUnavailable as e:
+    except ac.BrokerUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:  # noqa: BLE001 — surface SDK errors as 502
         raise HTTPException(status_code=502, detail=f"Quote fetch failed: {e}")
@@ -81,7 +81,7 @@ def bars(
     start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
     try:
         df = ac.get_bars(symbol.upper(), start=start, timeframe=timeframe)
-    except ac.AlpacaUnavailable as e:
+    except ac.BrokerUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Bars fetch failed: {e}")
@@ -107,7 +107,7 @@ def news(symbols: str = Query(..., description="Comma-separated tickers"), limit
     syms = [s.strip().upper() for s in symbols.split(",") if s.strip()]
     try:
         return {"news": ac.get_news(syms, limit=limit, include_external=True)}
-    except ac.AlpacaUnavailable as e:
+    except ac.BrokerUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"News fetch failed: {e}")

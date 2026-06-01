@@ -7,7 +7,7 @@ starves the strategy of trades.
 """
 from __future__ import annotations
 
-from app import alpaca_client as ac
+from app import broker_client as ac
 from app.backtest.engine import BacktestConfig
 from app.backtest.walkforward import walk_forward
 
