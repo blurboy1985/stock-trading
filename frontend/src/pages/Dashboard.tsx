@@ -32,6 +32,9 @@ function orderStatusClass(s: string): string {
   return "bg-hold/15 text-slate-300 border-hold/40";
 }
 
+const fmtOrderPrice = (n: number | null | undefined) =>
+  n == null || !Number.isFinite(n) || Math.abs(n) > 1e20 ? "-" : fmtUsd(n);
+
 function DefRow({ label, value, tone }: { label: string; value: ReactNode; tone?: string }) {
   return (
     <div className="flex items-center justify-between gap-3 py-1.5 border-b border-edge/60 last:border-0">
@@ -95,6 +98,7 @@ export function Dashboard() {
   });
 
   if (portfolio.isLoading) return <Spinner label="Loading portfolio…" />;
+  if (portfolio.isError) return <ErrorBanner message={(portfolio.error as Error).message} />;
   const p = portfolio.data;
 
   if (p && !p.configured) {
@@ -380,10 +384,10 @@ export function Dashboard() {
                       )}
                     </td>
                     <td className="pr-3 text-right tabular-nums text-slate-300">
-                      {o.limit_price != null ? fmtUsd(o.limit_price) : "—"}
+                      {fmtOrderPrice(o.limit_price)}
                     </td>
                     <td className="pr-3 text-right tabular-nums text-slate-300">
-                      {o.stop_price != null ? fmtUsd(o.stop_price) : "—"}
+                      {fmtOrderPrice(o.stop_price)}
                     </td>
                     <td className="pr-3 uppercase text-slate-400">{o.time_in_force || "—"}</td>
                     <td className="pr-3">

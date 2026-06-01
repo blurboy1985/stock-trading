@@ -21,7 +21,10 @@ class OrderRequest(BaseModel):
 
 @router.get("")
 def get_portfolio():
-    return portfolio.snapshot()
+    try:
+        return portfolio.snapshot()
+    except ac.BrokerUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @router.get("/orders")

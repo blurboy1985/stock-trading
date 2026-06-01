@@ -26,7 +26,14 @@ _cycle_lock = threading.Lock()
 
 # Latest cycle output, served to clients without recomputing.
 LATEST: dict[str, Any] = {
-    "recommendations": [], "generated_at": None, "regime": None,
+    "recommendations": [],
+    "generated_at": None,
+    "regime": None,
+    "top_buys": [],
+    "top_sells": [],
+    "message": None,
+    "errors": {},
+    "refresh_status": "idle",
 }
 
 REFRESH_MINUTES = 15
@@ -47,12 +54,26 @@ def run_cycle(force: bool = False) -> dict[str, Any]:
     concurrent broker calls can wedge page loads.
     """
     if not _cycle_lock.acquire(blocking=False):
+        LATEST["refresh_status"] = "running"
         return {"skipped": "cycle already running"}
     try:
+        LATEST.update(refresh_status="running", message=None, errors={})
         if not settings.has_credentials:
-            return {"skipped": "no credentials"}
+            message = "IBKR is not configured. Set IBKR_HOST, IBKR_PORT and IBKR_CLIENT_ID, then restart the backend."
+            LATEST.update(
+                recommendations=[],
+                top_buys=[],
+                top_sells=[],
+                generated_at=None,
+                regime=None,
+                message=message,
+                errors={},
+                refresh_status="skipped",
+            )
+            return {"skipped": "no credentials", "message": message}
         if not force and not _market_open():
-            return {"skipped": "market closed"}
+            LATEST.update(refresh_status="skipped", message="Market is closed; using the last generated recommendations.")
+            return {"skipped": "market closed", "message": LATEST.get("message")}
 
         reco = recommender.generate(persist=True)
         proposed: list[dict[str, Any]] = []
@@ -86,14 +107,25 @@ def run_cycle(force: bool = False) -> dict[str, Any]:
             generated_at=reco.get("generated_at"),
             regime=reco.get("regime"),
             proposal_error=proposal_error,
+            message=reco.get("message"),
+            errors=reco.get("errors", {}),
+            refresh_status="complete",
         )
         return {
             "recommendations": len(reco.get("recommendations", [])),
             "proposals": len(proposed),
             "proposal_error": proposal_error,
             "trailing_moves": len(trail.get("moves", [])),
+            "message": reco.get("message"),
         }
+    except Exception as exc:  # noqa: BLE001
+        message = f"Refresh failed: {type(exc).__name__}: {exc}"
+        LATEST.update(message=message, refresh_status="failed")
+        log.exception("recommendation refresh failed")
+        return {"error": message}
     finally:
+        if LATEST.get("refresh_status") == "running":
+            LATEST["refresh_status"] = "idle"
         _cycle_lock.release()
 
 

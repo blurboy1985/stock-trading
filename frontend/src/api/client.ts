@@ -49,6 +49,9 @@ export interface RecoResponse {
   recommendations: Recommendation[];
   top_buys: Recommendation[];
   top_sells: Recommendation[];
+  message?: string | null;
+  errors?: Record<string, string>;
+  refresh_status?: "idle" | "running" | "complete" | "failed" | "skipped";
 }
 
 export interface Proposal {
@@ -121,6 +124,7 @@ export interface OrderRow {
   symbol: string;
   qty: number;
   filled_qty: number;
+  remaining_qty?: number;
   filled_avg_price: number | null;
   side: string;
   type: string;
@@ -129,6 +133,9 @@ export interface OrderRow {
   limit_price: number | null;
   stop_price: number | null;
   status: string;
+  status_detail?: string | null;
+  pending_reason?: string | null;
+  log?: string[];
   extended_hours: boolean;
   submitted_at: string | null;
   filled_at: string | null;

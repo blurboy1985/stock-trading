@@ -135,6 +135,36 @@ def test_scheduler_cycle_lock_returns_in_progress_without_running(monkeypatch):
     assert ran is False
 
 
+def test_scheduler_cycle_publishes_refresh_message(monkeypatch):
+    from app.services import scheduler
+
+    monkeypatch.setattr(scheduler, "settings", SimpleNamespace(has_credentials=True))
+    monkeypatch.setattr(scheduler.runtime_settings, "get", lambda key: False)
+    monkeypatch.setattr(scheduler.proposals, "expire_stale", lambda: None)
+    monkeypatch.setattr(scheduler.proposals, "build_from_reco", lambda reco: [])
+
+    def fake_generate(persist=True):
+        return {
+            "recommendations": [],
+            "top_buys": [],
+            "top_sells": [],
+            "generated_at": None,
+            "regime": None,
+            "configured": True,
+            "message": "Refresh completed, but no historical market data was available.",
+            "errors": {"AAPL": "no bars"},
+        }
+
+    monkeypatch.setattr(scheduler.recommender, "generate", fake_generate)
+
+    result = scheduler.run_cycle(force=True)
+
+    assert result["recommendations"] == 0
+    assert scheduler.LATEST["refresh_status"] == "complete"
+    assert scheduler.LATEST["message"] == "Refresh completed, but no historical market data was available."
+    assert scheduler.LATEST["errors"] == {"AAPL": "no bars"}
+
+
 def test_sync_watchlist_is_noop():
     from app import broker_client as broker
 

@@ -213,6 +213,18 @@ def generate(persist: bool = True) -> dict[str, Any]:
         except Exception as e:  # noqa: BLE001
             errors[sym] = f"{type(e).__name__}: {e}"
 
+    message: str | None = None
+    if not bars_by_symbol:
+        message = (
+            "Refresh completed, but no historical market data was available. "
+            "Check your network/data-source access and that IBKR/TWS is running if Yahoo fallback is unavailable."
+        )
+    elif not results:
+        message = (
+            "Refresh completed, but every symbol failed scoring. "
+            "Open the backend logs for the per-symbol errors."
+        )
+
     # 5) Rank by risk-adjusted score: conviction-weighted, volatility-penalized.
     results.sort(key=lambda d: d.get("rank_score", d["score"]), reverse=True)
 
@@ -250,6 +262,7 @@ def generate(persist: bool = True) -> dict[str, Any]:
         "top_buys": buys[:5],
         "top_sells": sells[:5],
         "errors": errors,
+        "message": message,
     }
 
 

@@ -29,6 +29,24 @@ def snapshot() -> dict[str, Any]:
         }
     account = ac.get_account()
     positions = ac.get_positions()
+    if settings.is_paper and positions:
+        market_value = sum(float(p.get("market_value") or 0.0) for p in positions)
+        cost_basis = sum(float(p.get("cost_basis") or 0.0) for p in positions)
+        if float(account.get("cash") or 0.0) == float(settings.paper_starting_cash):
+            cash = float(settings.paper_starting_cash) - cost_basis
+            equity = cash + market_value
+            account.update(
+                cash=cash,
+                buying_power=max(cash, 0.0),
+                portfolio_value=equity,
+                equity=equity,
+                last_equity=equity,
+                long_market_value=sum(max(float(p.get("market_value") or 0.0), 0.0) for p in positions),
+                short_market_value=abs(sum(min(float(p.get("market_value") or 0.0), 0.0) for p in positions)),
+                position_market_value=market_value,
+                regt_buying_power=max(cash, 0.0),
+                daytrading_buying_power=max(cash, 0.0),
+            )
     return {"configured": True, "account": account, "positions": positions}
 
 
