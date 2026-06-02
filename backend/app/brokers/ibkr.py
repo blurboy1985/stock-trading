@@ -668,11 +668,30 @@ def _submit_order_unlocked(symbol: str, qty: float, side: str, order_type: str =
 
 def _cancel_order_unlocked(order_id: str) -> None:
     ib = _connect()
+    target = None
+    try:
+        ib.reqOpenOrders()
+        ib.sleep(0.5)
+    except Exception:
+        pass
     for trade in ib.trades() or []:
         if str(getattr(getattr(trade, "order", None), "orderId", "")) == str(order_id):
-            ib.cancelOrder(trade.order)
+            target = trade
+            break
+    if target is None:
+        raise BrokerUnavailable(f"IBKR order {order_id} was not found in open trades.")
+    ib.cancelOrder(target.order)
+    for _ in range(20):
+        try:
+            ib.sleep(0.5)
+        except Exception:
+            break
+        state = enumval(getattr(getattr(target, "orderStatus", None), "status", ""))
+        if state in {"cancelled", "apicancelled", "inactive"}:
             return
-    raise BrokerUnavailable(f"IBKR order {order_id} was not found in open trades.")
+    # Return after sending the cancellation even if IBKR is still reporting
+    # PendingCancel; callers can refresh /orders to observe the final state.
+    return
 
 
 def replace_order(order_id: str, *, stop_price: float | None = None, limit_price: float | None = None) -> dict[str, Any]:
@@ -691,13 +710,24 @@ def _close_position_unlocked(symbol: str, confirm_live: bool = False) -> dict[st
 
 def _list_orders_unlocked(status: str = "all", limit: int = 50) -> list[dict[str, Any]]:
     ib = _connect()
+    broker_open_order_ids: set[str] = set()
     try:
         ib.reqOpenOrders()
         ib.sleep(0.5)
+        broker_open_order_ids = {
+            str(getattr(order, "orderId", ""))
+            for order in (ib.openOrders() or [])
+            if str(getattr(order, "orderId", ""))
+        }
     except Exception:
         pass
     out: list[dict[str, Any]] = []
     trades = list(ib.trades() or [])
+    if status == "open" and not broker_open_order_ids:
+        # IBKR reports no currently open orders.  ib_insync may still retain
+        # stale PendingCancel trades in-memory after a cancel; do not surface
+        # those as actionable open orders.
+        trades = []
     order_ids = {
         str(getattr(getattr(trade, "order", None), "orderId", ""))
         for trade in trades[-limit:]
@@ -709,9 +739,10 @@ def _list_orders_unlocked(status: str = "all", limit: int = 50) -> list[dict[str
         contract = getattr(trade, "contract", None)
         st = getattr(trade, "orderStatus", None)
         state = enumval(getattr(st, "status", ""))
-        if status == "open" and state in {"filled", "cancelled", "inactive"}:
+        terminal_states = {"filled", "cancelled", "apicancelled", "inactive", "pendingcancel"}
+        if status == "open" and state in terminal_states:
             continue
-        if status == "closed" and state not in {"filled", "cancelled", "inactive"}:
+        if status == "closed" and state not in terminal_states:
             continue
         order_type = enumval(getattr(order, "orderType", ""))
         qty = safe_float(getattr(order, "totalQuantity", 0))

@@ -43,6 +43,7 @@ def test_ibkr_connection_is_lazy_and_maps_account(monkeypatch):
         SimpleNamespace(account="DU123", tag="GrossPositionValue", value="10000", currency="USD"),
     ]
     monkeypatch.setattr(ibkr, "_ib", ib)
+    monkeypatch.setattr(ibkr.settings, "paper_cash_adjustment", 0.0)
 
     account = ibkr.get_account()
 
@@ -261,3 +262,22 @@ def test_sync_watchlist_is_noop():
     from app import broker_client as broker
 
     assert broker.sync_watchlist(["aapl"]) == {"symbols": ["AAPL"], "action": "noop"}
+
+
+def test_ibkr_open_orders_hides_pending_cancel_stale_trade(monkeypatch):
+    from app.brokers import ibkr
+
+    order = SimpleNamespace(orderId=272, action="BUY", totalQuantity=1, orderType="LMT", lmtPrice=1.0, auxPrice=0, tif="DAY")
+    trade = SimpleNamespace(
+        order=order,
+        orderStatus=SimpleNamespace(status="PendingCancel", filled=0, remaining=1, avgFillPrice=0),
+        contract=SimpleNamespace(symbol="SPY"),
+        log=[],
+    )
+    ib = Mock()
+    ib.trades.return_value = [trade]
+    ib.openOrders.return_value = [order]
+    monkeypatch.setattr(ibkr, "_connect", lambda: ib)
+
+    assert ibkr.list_orders(status="open") == []
+    assert ibkr.list_orders(status="closed")[0]["status"] == "pendingcancel"

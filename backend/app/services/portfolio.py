@@ -85,6 +85,12 @@ def place_order(
 ) -> dict[str, Any]:
     """Validate, gate, submit, and record an order. Raises OrderRejected."""
     symbol = symbol.upper()
+    if not _live_gate(confirm_live):
+        raise OrderRejected(
+            "Trading is not authorized. Orders require TRADING_ENABLED=true; "
+            "real-money orders also require LIVE_TRADING=true, live IBKR mode, "
+            "and explicit confirmation."
+        )
     snap = snapshot()
     if not snap["configured"]:
         raise OrderRejected("IBKR broker is not configured.")
@@ -105,13 +111,6 @@ def place_order(
     decision = risk.validate_order(account, positions, symbol, side, qty, price)
     if not decision.ok:
         raise OrderRejected(decision.reason)
-
-    if not _live_gate(confirm_live):
-        raise OrderRejected(
-            "Trading is not authorized. Orders require TRADING_ENABLED=true; "
-            "real-money orders also require LIVE_TRADING=true, live IBKR mode, "
-            "and explicit confirmation."
-        )
 
     result = ac.submit_order(
         symbol=symbol,
@@ -160,6 +159,12 @@ def close_position(
     passes; real-money liquidation still needs the full live authorization.
     """
     symbol = symbol.upper()
+    if not _live_gate(confirm_live):
+        raise OrderRejected(
+            "Trading is not authorized. Orders require TRADING_ENABLED=true; "
+            "real-money orders also require LIVE_TRADING=true, live IBKR mode, "
+            "and explicit confirmation."
+        )
     snap = snapshot()
     if not snap["configured"]:
         raise OrderRejected("IBKR broker is not configured.")
