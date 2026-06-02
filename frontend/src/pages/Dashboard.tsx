@@ -31,24 +31,16 @@ const signClass = (n: number | string | null | undefined) => {
   return value == null || value === 0 ? "text-slate-200" : value > 0 ? "text-buy" : "text-sell";
 };
 
-const fmtDateTime = (d: string | null | undefined) => {
-  if (!d) return "—";
-  const date = new Date(d);
-  return Number.isNaN(date.getTime())
-    ? "—"
-    : date.toLocaleString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      });
+const parseBrokerDate = (d: string | null | undefined) => {
+  if (!d) return null;
+  const hasZone = /(?:z|[+-]\d{2}:?\d{2})$/i.test(d);
+  const date = new Date(hasZone ? d : `${d}Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
 };
 
-const fmtSgtDateTime = (d: string | null | undefined) => {
-  if (!d) return "—";
-  const date = new Date(d);
-  return Number.isNaN(date.getTime())
+const fmtDateTime = (d: string | null | undefined) => {
+  const date = parseBrokerDate(d);
+  return date == null
     ? "—"
     : date.toLocaleString(undefined, {
         year: "numeric",
@@ -405,7 +397,7 @@ export function Dashboard() {
               <tbody>
                 {openOrders.map((o) => (
                   <tr key={o.id} className="border-t border-edge">
-                    <td className="py-2 pr-3 text-slate-400">{fmtSgtDateTime(o.submitted_at)}</td>
+                    <td className="py-2 pr-3 text-slate-400">{fmtDateTime(o.submitted_at)}</td>
                     <td className="pr-3 font-semibold">
                       <Link to={`/ticker/${o.symbol}`} className="hover:text-accent">
                         {o.symbol}

@@ -210,6 +210,53 @@ def test_scheduler_cycle_publishes_refresh_message(monkeypatch):
     assert scheduler.LATEST["errors"] == {"AAPL": "no bars"}
 
 
+def test_paper_snapshot_cash_reflects_positions_with_cash_adjustment(monkeypatch):
+    from app.services import portfolio
+
+    monkeypatch.setattr(
+        portfolio,
+        "settings",
+        SimpleNamespace(
+            has_credentials=True,
+            is_paper=True,
+            paper_starting_cash=100000.0,
+            paper_cash_adjustment=900000.0,
+        ),
+    )
+    monkeypatch.setattr(
+        portfolio.ac,
+        "get_account",
+        lambda: {
+            "cash": 1000000.0,
+            "buying_power": 1000000.0,
+            "equity": 1000000.0,
+            "last_equity": 1000000.0,
+            "portfolio_value": 1000000.0,
+            "long_market_value": 0.0,
+            "short_market_value": 0.0,
+            "position_market_value": 0.0,
+            "regt_buying_power": 1000000.0,
+            "daytrading_buying_power": 1000000.0,
+        },
+    )
+    monkeypatch.setattr(
+        portfolio.ac,
+        "get_positions",
+        lambda: [
+            {"symbol": "AAPL", "market_value": 120000.0, "cost_basis": 100000.0},
+            {"symbol": "MSFT", "market_value": 45000.0, "cost_basis": 50000.0},
+        ],
+    )
+
+    snap = portfolio.snapshot()
+
+    assert snap["account"]["cash"] == 850000.0
+    assert snap["account"]["buying_power"] == 850000.0
+    assert snap["account"]["equity"] == 1015000.0
+    assert snap["account"]["portfolio_value"] == 1015000.0
+    assert snap["account"]["position_market_value"] == 165000.0
+
+
 def test_sync_watchlist_is_noop():
     from app import broker_client as broker
 

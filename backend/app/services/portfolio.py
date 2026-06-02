@@ -32,8 +32,18 @@ def snapshot() -> dict[str, Any]:
     if settings.is_paper and positions:
         market_value = sum(float(p.get("market_value") or 0.0) for p in positions)
         cost_basis = sum(float(p.get("cost_basis") or 0.0) for p in positions)
-        if float(account.get("cash") or 0.0) == float(settings.paper_starting_cash):
-            cash = float(settings.paper_starting_cash) - cost_basis
+        effective_starting_cash = float(settings.paper_starting_cash) + float(
+            getattr(settings, "paper_cash_adjustment", 0.0) or 0.0
+        )
+        synthetic_cash = abs(float(account.get("cash") or 0.0) - effective_starting_cash) < 0.01
+        stale_position_values = (
+            market_value
+            and not float(account.get("position_market_value") or 0.0)
+            and not float(account.get("long_market_value") or 0.0)
+            and not float(account.get("short_market_value") or 0.0)
+        )
+        if synthetic_cash or stale_position_values:
+            cash = effective_starting_cash - cost_basis
             equity = cash + market_value
             account.update(
                 cash=cash,
