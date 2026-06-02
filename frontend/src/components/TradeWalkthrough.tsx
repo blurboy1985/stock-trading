@@ -141,20 +141,15 @@ export function TradeWalkthrough() {
   const [i, setI] = useState(0);
   const navigate = useNavigate();
 
-  // Open on demand (header / Settings) and auto-open on first ever visit.
+  // Open on demand only (header / Settings). Auto-opening this modal on first
+  // visit made normal pages such as History look broken because the walkthrough
+  // blocked all interaction until dismissed.
   useEffect(() => {
     const onOpen = () => {
       setI(0);
       setOpen(true);
     };
     window.addEventListener(OPEN_EVENT, onOpen);
-    if (!localStorage.getItem(SEEN_KEY)) {
-      const t = setTimeout(onOpen, 600);
-      return () => {
-        clearTimeout(t);
-        window.removeEventListener(OPEN_EVENT, onOpen);
-      };
-    }
     return () => window.removeEventListener(OPEN_EVENT, onOpen);
   }, []);
 
