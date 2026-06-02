@@ -201,11 +201,11 @@ export function Settings() {
               className="inp"
             >
               <option value="lexicon">Lexicon (VADER + Loughran–McDonald)</option>
-              <option value="llm">Claude (LLM) — uses Claude Code subscription</option>
+              <option value="llm">ChatGPT (LLM) — uses Hermes ChatGPT subscription</option>
             </select>
             <span className="text-[11px] text-slate-500">
-              LLM runs via the local Claude Code CLI (no API key); falls back to
-              the lexicon on any error.
+              LLM runs via the local Hermes CLI using the same ChatGPT/OpenAI
+              subscription as Hermes Agent; falls back to the lexicon on any error.
             </span>
           </label>
           <NumField
