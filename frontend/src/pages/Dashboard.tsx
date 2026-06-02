@@ -76,6 +76,7 @@ function DefRow({ label, value, tone }: { label: string; value: ReactNode; tone?
 export function Dashboard() {
   const qc = useQueryClient();
   const [confirmSell, setConfirmSell] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const portfolio = useQuery({
     queryKey: ["portfolio"],
@@ -104,10 +105,18 @@ export function Dashboard() {
     enabled: configured,
   });
 
-  const refreshAll = () => {
-    qc.invalidateQueries({ queryKey: ["portfolio"] });
-    qc.invalidateQueries({ queryKey: ["orders", "open"] });
-    qc.invalidateQueries({ queryKey: ["activities"] });
+  const refreshAll = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        qc.refetchQueries({ queryKey: ["portfolio"], exact: true }),
+        qc.refetchQueries({ queryKey: ["orders", "open"], exact: true }),
+        qc.refetchQueries({ queryKey: ["activities"], exact: true }),
+        qc.refetchQueries({ queryKey: ["reco"], exact: true }),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const sell = useMutation({
@@ -186,9 +195,10 @@ export function Dashboard() {
           {updatedAt && <span>Updated {updatedAt.toLocaleTimeString()}</span>}
           <button
             onClick={refreshAll}
+            disabled={refreshing}
             className="px-3 py-1.5 rounded-lg border bg-panel2 border-edge text-slate-300 hover:bg-edge"
           >
-            ↻ Refresh
+            {refreshing ? "Refreshing…" : "↻ Refresh"}
           </button>
         </div>
       </div>

@@ -6,7 +6,17 @@ import "./index.css";
 import App from "./App.tsx";
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      // This is a live trading dashboard. When the browser tab regains focus,
+      // refresh stale broker data instead of leaving the user on a cached view.
+      refetchOnWindowFocus: true,
+      // Keep the short polling queries alive even if the user temporarily
+      // switches browser tabs, so pending orders/positions stay current.
+      refetchIntervalInBackground: true,
+    },
+  },
 });
 
 createRoot(document.getElementById("root")!).render(
