@@ -11,6 +11,7 @@ import { History } from "./pages/History";
 import { Settings } from "./pages/Settings";
 import { DisclaimerFooter } from "./components/Disclosures";
 import { TradeWalkthrough, openTradeGuide } from "./components/TradeWalkthrough";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const tabs = [
   { to: "/", label: "Dashboard", end: true },
@@ -85,16 +86,18 @@ export default function App() {
       <TradeWalkthrough />
 
       <main className="max-w-6xl mx-auto w-full px-5 py-7 flex-1">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/recommendations" element={<Recommendations />} />
-          <Route path="/automation" element={<Automation />} />
-          <Route path="/research" element={<Research />} />
-          <Route path="/ticker/:symbol" element={<Ticker />} />
-          <Route path="/backtest" element={<Backtest />} />
-          <Route path="/history" element={<History />} />
-          <Route path="/settings" element={<Settings />} />
-        </Routes>
+        <ErrorBoundary>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/recommendations" element={<Recommendations />} />
+            <Route path="/automation" element={<Automation />} />
+            <Route path="/research" element={<Research />} />
+            <Route path="/ticker/:symbol" element={<Ticker />} />
+            <Route path="/backtest" element={<Backtest />} />
+            <Route path="/history" element={<History />} />
+            <Route path="/settings" element={<Settings />} />
+          </Routes>
+        </ErrorBoundary>
       </main>
 
       <footer className="border-t border-edge bg-panel/60 mt-10">

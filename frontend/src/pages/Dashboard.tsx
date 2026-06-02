@@ -36,7 +36,13 @@ const fmtDateTime = (d: string | null | undefined) => {
   const date = new Date(d);
   return Number.isNaN(date.getTime())
     ? "—"
-    : date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    : date.toLocaleString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
 };
 
 const fmtSgtDateTime = (d: string | null | undefined) => {
@@ -45,8 +51,11 @@ const fmtSgtDateTime = (d: string | null | undefined) => {
   return Number.isNaN(date.getTime())
     ? "—"
     : date.toLocaleString(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
         timeZone: "Asia/Singapore",
         timeZoneName: "short",
       });
