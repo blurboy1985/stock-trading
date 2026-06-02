@@ -723,11 +723,6 @@ def _list_orders_unlocked(status: str = "all", limit: int = 50) -> list[dict[str
         pass
     out: list[dict[str, Any]] = []
     trades = list(ib.trades() or [])
-    if status == "open" and not broker_open_order_ids:
-        # IBKR reports no currently open orders.  ib_insync may still retain
-        # stale PendingCancel trades in-memory after a cancel; do not surface
-        # those as actionable open orders.
-        trades = []
     order_ids = {
         str(getattr(getattr(trade, "order", None), "orderId", ""))
         for trade in trades[-limit:]
