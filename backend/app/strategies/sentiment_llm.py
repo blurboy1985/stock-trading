@@ -1,15 +1,14 @@
-"""Optional Claude-backed headline sentiment scorer (off by default).
+"""Optional ChatGPT-backed headline sentiment scorer (off by default).
 
 This is an alternative per-item polarity source for :mod:`.sentiment`. When the
 ``sentiment_backend`` runtime setting is ``"llm"``, :func:`batch_polarity`
-scores a batch of headlines with Claude and returns a polarity in ``[-1, 1]``
+scores a batch of headlines with ChatGPT/OpenAI and returns a polarity in ``[-1, 1]``
 per headline.
 
-Auth: it drives Claude through the **Claude Code subscription** via the Claude
-Agent SDK (``claude-agent-sdk``), which shells out to the locally-installed,
-logged-in ``claude`` CLI — so there is **no per-token API key and no
-``ANTHROPIC_API_KEY`` required**. Prerequisites: the Claude Code CLI installed
-and authenticated (`claude` on PATH), plus ``pip install claude-agent-sdk``.
+Auth: it drives the local ``hermes`` CLI in one-shot mode, so it uses the same
+Hermes-configured **ChatGPT/OpenAI subscription** as this agent session. There
+is **no per-token API key and no ``OPENAI_API_KEY`` required** for this app.
+Prerequisite: ``hermes`` is installed and authenticated for the default profile.
 
 It is deliberately best-effort: **any** failure (CLI missing, not logged in,
 timeout, malformed output) returns ``{}`` so the caller falls back to the
@@ -17,9 +16,9 @@ offline lexicon blend and a scoring cycle never breaks.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import re
+import subprocess
 from typing import Any
 
 from ..config import settings
@@ -28,7 +27,7 @@ _TIMEOUT_S = 90.0  # hard cap so a wedged CLI can't stall a scoring cycle
 
 # Headline-keyed memo of polarities. The recommender scores each symbol
 # separately, but news items are shared across symbols and a headline's
-# sentiment is stable — so we query Claude once per *unseen* headline and reuse
+# sentiment is stable — so we query ChatGPT once per *unseen* headline and reuse
 # the result. Without this, a refresh fires one ~5s CLI call per symbol and a
 # 12-symbol universe takes minutes (see ``prewarm`` below). Bounded so a
 # long-running process can't grow it without limit.
@@ -86,37 +85,31 @@ def _parse_json(raw: str) -> dict[str, Any]:
     return {}
 
 
-async def _aquery(prompt: str, model: str | None) -> str:
-    from claude_agent_sdk import (
-        AssistantMessage,
-        ClaudeAgentOptions,
-        TextBlock,
-        query,
+def _query_chatgpt(prompt: str, model: str | None) -> str:
+    """Run a pure Hermes/ChatGPT one-shot completion and return stdout."""
+    full_prompt = f"{_SYSTEM}\n\nHeadlines:\n{prompt}"
+    cmd = [settings.hermes_cli, "-z", full_prompt, "-t", "safe", "--ignore-rules"]
+    if model:
+        cmd.extend(["--model", model])
+    completed = subprocess.run(  # noqa: S603 — configured local CLI, no shell
+        cmd,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=_TIMEOUT_S,
     )
-
-    options = ClaudeAgentOptions(
-        system_prompt=_SYSTEM,
-        allowed_tools=[],       # pure completion — no file/bash/tool access
-        max_turns=1,
-        model=model,            # None => the CLI's default model
-        setting_sources=[],     # isolate: don't load the repo's CLAUDE.md / settings
-    )
-    text = ""
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, AssistantMessage):
-            for block in message.content:
-                if isinstance(block, TextBlock):
-                    text += block.text
-    return text
+    if completed.returncode != 0:
+        raise RuntimeError(completed.stderr.strip() or completed.stdout.strip())
+    return completed.stdout
 
 
 def batch_polarity(
     items: list[dict[str, Any]], model: str | None = None
 ) -> dict[str, float]:
-    """Score a batch of news items with Claude → ``{item_text: polarity}``.
+    """Score a batch of news items with ChatGPT → ``{item_text: polarity}``.
 
     Headlines already in :data:`_CACHE` are served from it; only unseen
-    headlines hit Claude (a single call for the whole unseen batch). Returns
+    headlines hit ChatGPT (a single call for the whole unseen batch). Returns
     ``{}`` on any failure so the caller falls back to the lexicon.
     """
     if not items:
@@ -147,14 +140,14 @@ def batch_polarity(
 def _query_items(
     items: list[dict[str, Any]], model: str | None
 ) -> dict[str, float]:
-    """One Claude call for ``items`` → ``{item_text: polarity}`` (``{}`` on error)."""
+    """One ChatGPT call for ``items`` → ``{item_text: polarity}`` (``{}`` on error)."""
     prompt, index_to_text = _build_prompt(items)
     if not index_to_text:
         return {}
 
-    chosen_model = model or settings.anthropic_sentiment_model or None
+    chosen_model = model or settings.chatgpt_sentiment_model or None
     try:
-        raw = asyncio.run(asyncio.wait_for(_aquery(prompt, chosen_model), _TIMEOUT_S))
+        raw = _query_chatgpt(prompt, chosen_model)
         data = _parse_json(raw)
     except Exception:  # noqa: BLE001 — never break a scoring cycle on the LLM path
         return {}
@@ -171,7 +164,7 @@ def _query_items(
 
 
 def prewarm(items: list[dict[str, Any]], model: str | None = None) -> None:
-    """Score every distinct headline in ``items`` in a single Claude call so the
+    """Score every distinct headline in ``items`` in a single ChatGPT call so the
     recommender's per-symbol :func:`batch_polarity` calls become cache hits.
 
     Best-effort: any failure leaves the cache untouched and the per-symbol path

@@ -18,9 +18,9 @@ tzdata>=2024.1
 # Sentiment
 vaderSentiment>=3.3.2
 
-# Optional LLM sentiment backend (off by default). Drives Claude via the local
-# Claude Code CLI subscription — requires the `claude` CLI installed & logged in.
-claude-agent-sdk>=0.1
+# Optional LLM sentiment backend (off by default) drives the local `hermes`
+# CLI, using the same ChatGPT/OpenAI subscription Hermes is authenticated with.
+# No extra Python package or OpenAI API key is required.
 
 # Persistence
 SQLAlchemy>=2.0

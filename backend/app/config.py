@@ -40,8 +40,12 @@ class Settings(BaseSettings):
 
     # ── LLM sentiment backend (optional) ──────────────────────────────
     # Only used when the `sentiment_backend` setting is "llm". It runs through
-    # the local Claude Code CLI subscription (Claude Agent SDK) — no API key.
-    # Leave the model blank to use the CLI's default; set it to pin a model.
+    # the local Hermes CLI, so it uses the same ChatGPT/OpenAI subscription that
+    # Hermes itself is authenticated with; no OpenAI API key is required here.
+    # Leave the model blank to use Hermes' configured default; set it to pin one.
+    chatgpt_sentiment_model: str = ""
+    hermes_cli: str = "hermes"
+    # Deprecated legacy knob, accepted only so old .env files keep loading.
     anthropic_sentiment_model: str = ""
 
     # ── Safety ────────────────────────────────────────────────────────

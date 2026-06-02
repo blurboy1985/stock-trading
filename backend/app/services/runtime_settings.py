@@ -58,7 +58,7 @@ DEFAULTS: dict[str, Any] = {
     # (gap risk). 0 disables. Live-only — no point-in-time data for backtests.
     "earnings_blackout_days": 5,
     # ── Sentiment / fundamentals tuning ───────────────────────────────
-    "sentiment_backend": "lexicon",      # "lexicon" (VADER+LM) or "llm" (Claude)
+    "sentiment_backend": "lexicon",      # "lexicon" (VADER+LM) or "llm" (ChatGPT/OpenAI)
     "sentiment_halflife_days": 3.0,      # recency decay half-life for headlines
     "sentiment_lm_weight": 0.5,          # blend: Loughran-McDonald vs VADER
     "fundamentals_sector_relative": True,  # value vs sector median (live universe)
