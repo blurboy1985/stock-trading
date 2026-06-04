@@ -47,7 +47,7 @@ def test_ibkr_connection_is_lazy_and_maps_account(monkeypatch):
 
     account = ibkr.get_account()
 
-    ib.client.connect.assert_called_once()
+    ib.connect.assert_called_once()
     assert account["account_number"] == "DU123"
     assert account["equity"] == 100000.0
     assert account["cash"] == 50000.0
@@ -68,7 +68,7 @@ def test_ibkr_connect_disables_multi_account_group_request(monkeypatch):
 
     assert out is ib
     assert ib.MaxSyncedSubAccounts == 0
-    ib.client.connect.assert_called_once_with(
+    ib.connect.assert_called_once_with(
         ibkr.settings.ibkr_host,
         ibkr.settings.ibkr_port,
         clientId=ibkr.settings.ibkr_client_id,
@@ -211,7 +211,7 @@ def test_scheduler_cycle_publishes_refresh_message(monkeypatch):
     assert scheduler.LATEST["errors"] == {"AAPL": "no bars"}
 
 
-def test_paper_snapshot_cash_reflects_positions_with_cash_adjustment(monkeypatch):
+def test_paper_snapshot_preserves_broker_account_values(monkeypatch):
     from app.services import portfolio
 
     monkeypatch.setattr(
@@ -251,11 +251,11 @@ def test_paper_snapshot_cash_reflects_positions_with_cash_adjustment(monkeypatch
 
     snap = portfolio.snapshot()
 
-    assert snap["account"]["cash"] == 850000.0
-    assert snap["account"]["buying_power"] == 850000.0
-    assert snap["account"]["equity"] == 1015000.0
-    assert snap["account"]["portfolio_value"] == 1015000.0
-    assert snap["account"]["position_market_value"] == 165000.0
+    assert snap["account"]["cash"] == 1000000.0
+    assert snap["account"]["buying_power"] == 1000000.0
+    assert snap["account"]["equity"] == 1000000.0
+    assert snap["account"]["portfolio_value"] == 1000000.0
+    assert snap["account"]["position_market_value"] == 0.0
 
 
 def test_sync_watchlist_is_noop():
@@ -281,3 +281,21 @@ def test_ibkr_open_orders_hides_pending_cancel_stale_trade(monkeypatch):
 
     assert ibkr.list_orders(status="open") == []
     assert ibkr.list_orders(status="closed")[0]["status"] == "pendingcancel"
+
+
+def test_ibkr_open_orders_require_broker_open_order(monkeypatch):
+    from app.brokers import ibkr
+
+    order = SimpleNamespace(orderId=587, action="SELL", totalQuantity=347, orderType="MKT", lmtPrice=0, auxPrice=0, tif="DAY")
+    trade = SimpleNamespace(
+        order=order,
+        orderStatus=SimpleNamespace(status="PendingSubmit", filled=0, remaining=347, avgFillPrice=0),
+        contract=SimpleNamespace(symbol="AAPL"),
+        log=[],
+    )
+    ib = Mock()
+    ib.trades.return_value = [trade]
+    ib.openOrders.return_value = []
+    monkeypatch.setattr(ibkr, "_connect", lambda: ib)
+
+    assert ibkr.list_orders(status="open") == []

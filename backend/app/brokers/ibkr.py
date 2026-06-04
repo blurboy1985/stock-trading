@@ -66,18 +66,19 @@ def _connect() -> Any:
                 _ib.MaxSyncedSubAccounts = 0
             except Exception:
                 pass
+        assert _ib is not None
         if not _ib.isConnected():
             last_exc: Exception | None = None
             connected = False
             client_ids = [settings.ibkr_client_id, settings.ibkr_client_id + 1, settings.ibkr_client_id + 2]
             for client_id in dict.fromkeys(client_ids):
                 try:
-                    # Use the low-level socket handshake instead of IB.connect().
-                    # IB.connect() performs a full account/position/order sync;
-                    # on some Gateway sessions those sync requests time out or
-                    # emit account-group errors even though the API socket is
-                    # usable for quotes, orders, and cached account state.
-                    _ib.client.connect(
+                    # Use ib_insync's full connect/sync path so account values,
+                    # portfolio rows, positions, and open orders reflect the
+                    # broker's current state. A low-level socket-only handshake
+                    # leaves ib.trades()/accountValues() as stale in-memory
+                    # state and can make old PendingSubmit orders appear active.
+                    _ib.connect(
                         settings.ibkr_host,
                         settings.ibkr_port,
                         clientId=client_id,
@@ -297,56 +298,34 @@ def _get_positions_unlocked() -> list[dict[str, Any]]:
     account = _account_id(ib)
     out: list[dict[str, Any]] = []
 
-    portfolio_rows = []
+    # Prefer IBKR's positions feed over ib_insync's portfolio cache. The
+    # portfolio cache can retain rows after paper-account resets or flattening
+    # fills until the client reconnects, while reqPositions reflects the broker's
+    # current open holdings.
     try:
-        portfolio_rows = ib.portfolio(account) or []
+        rows = ib.reqPositions() or []
     except Exception:
-        portfolio_rows = []
-    for item in portfolio_rows:
-        c = getattr(item, "contract", None)
-        sym = _contract_symbol(c)
-        qty = safe_float(getattr(item, "position", 0))
-        avg = safe_float(getattr(item, "averageCost", 0))
-        price = safe_float(getattr(item, "marketPrice", 0)) or get_latest_trade_price(sym) or avg
-        mv = safe_float(getattr(item, "marketValue", 0)) or qty * price
-        cost = qty * avg
-        upl = safe_float(getattr(item, "unrealizedPNL", 0)) or mv - cost
-        out.append({
-            "symbol": sym,
-            "qty": qty,
-            "qty_available": qty,
-            "avg_entry_price": avg,
-            "current_price": price,
-            "lastday_price": price,
-            "market_value": mv,
-            "cost_basis": cost,
-            "unrealized_pl": upl,
-            "unrealized_plpc": (upl / cost) if cost else 0.0,
-            "unrealized_intraday_pl": 0.0,
-            "unrealized_intraday_plpc": 0.0,
-            "change_today": 0.0,
-            "asset_class": "us_equity",
-            "exchange": getattr(c, "exchange", "SMART") or "SMART",
-            "side": "long" if qty >= 0 else "short",
-        })
-    if out:
-        return out
-
-    try:
-        rows = ib.positions(account) if account else ib.positions()
-    except Exception:
-        rows = []
+        try:
+            rows = ib.positions(account) if account else ib.positions()
+        except Exception:
+            rows = []
     for p in rows:
         c = getattr(p, "contract", None)
         if account and getattr(p, "account", account) != account:
             continue
         sym = _contract_symbol(c)
         qty = safe_float(getattr(p, "position", 0))
+        if abs(qty) < 1e-9:
+            continue
         avg = safe_float(getattr(p, "avgCost", 0))
         row = _position_row(sym, qty, avg)
         row["exchange"] = getattr(c, "exchange", "SMART") or "SMART"
         out.append(row)
-    return out or _positions_from_filled_trades(ib)
+    # Full ib.connect() synchronizes positions/portfolio with the broker. Do not
+    # synthesize current positions from session fills here: after a flatten order,
+    # a lone SELL fill would otherwise be misread as a new short position even
+    # when IBKR reports no open position.
+    return out
 
 
 def get_clock() -> dict[str, Any]:
@@ -735,7 +714,8 @@ def _list_orders_unlocked(status: str = "all", limit: int = 50) -> list[dict[str
         st = getattr(trade, "orderStatus", None)
         state = enumval(getattr(st, "status", ""))
         terminal_states = {"filled", "cancelled", "apicancelled", "inactive", "pendingcancel"}
-        if status == "open" and state in terminal_states:
+        order_id = str(getattr(order, "orderId", ""))
+        if status == "open" and (state in terminal_states or order_id not in broker_open_order_ids):
             continue
         if status == "closed" and state not in terminal_states:
             continue
@@ -746,7 +726,6 @@ def _list_orders_unlocked(status: str = "all", limit: int = 50) -> list[dict[str
         if state not in {"filled", "cancelled", "inactive"} and remaining_qty <= 0 and filled_qty < qty:
             remaining_qty = max(0.0, qty - filled_qty)
         log_messages = _trade_log_messages(trade)
-        order_id = str(getattr(order, "orderId", ""))
         symbol = getattr(contract, "symbol", "")
         side = enumval(getattr(order, "action", ""))
         submitted_at = submitted_at_by_id.get(order_id)

@@ -91,10 +91,7 @@ export function Dashboard() {
   const configured = portfolio.data?.configured ?? false;
   const orders = useQuery({
     queryKey: ["orders", "open"],
-    // IBKR PendingSubmit orders are present in the session trade list but can be
-    // absent from reqOpenOrders() until fully transmitted. Request all current
-    // session trades so the dashboard still shows pending paper exits.
-    queryFn: () => api.orders("all"),
+    queryFn: () => api.orders("open"),
     refetchInterval: 10_000,
     enabled: configured,
   });
