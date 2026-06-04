@@ -25,7 +25,7 @@ export function Automation() {
     setBanners((b) => [{ kind, text }, ...b].slice(0, 6));
 
   const proposals = useQuery({
-    queryKey: ["proposals"],
+    queryKey: ["proposals", "all"],
     queryFn: () => api.proposals(""),
     refetchInterval: 15_000,
   });

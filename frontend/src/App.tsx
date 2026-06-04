@@ -27,11 +27,11 @@ export default function App() {
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
   const broker = settings.data?.broker;
   const proposals = useQuery({
-    queryKey: ["proposals"],
+    queryKey: ["proposals", "pending"],
     queryFn: () => api.proposals("pending"),
     refetchInterval: 30_000,
   });
-  const pendingCount = proposals.data?.proposals.length ?? 0;
+  const pendingCount = proposals.data?.proposals.filter((p) => p.status === "pending").length ?? 0;
 
   return (
     <div className="min-h-full flex flex-col">
