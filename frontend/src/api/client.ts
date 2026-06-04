@@ -68,6 +68,7 @@ export interface Proposal {
   atr_pct?: number | null;
   rationale: string;
   reasons: string[];
+  breakdown?: Record<string, SignalBreakdown>;
   regime?: string | null;
   blocked_reason?: string | null;
   status: "pending" | "executed" | "rejected" | "failed" | "expired";

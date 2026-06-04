@@ -96,6 +96,8 @@ class TradeProposal(Base):
     atr_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     rationale: Mapped[str] = mapped_column(Text, default="")  # human-readable why
     reasons_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Full per-signal recommendation breakdown captured at proposal time.
+    breakdown_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     regime: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Set when the pre-trade dry-run risk check fails — confirm is then blocked.
     blocked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

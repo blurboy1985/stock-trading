@@ -17,7 +17,7 @@ from sqlalchemy import select
 from .. import broker_client as ac
 from ..config import settings
 from ..db import SessionLocal
-from ..models import TradeProposal
+from ..models import Recommendation, TradeProposal
 from . import portfolio, risk, runtime_settings
 
 
@@ -142,6 +142,7 @@ def _make(
     conviction = d.get("conviction")
     atr_pct = d.get("atr_pct")
     reasons = d.get("reasons") or []
+    breakdown = d.get("breakdown") or {}
 
     # Dry-run the same risk gate confirm/place_order will enforce, so the user
     # sees up front whether (and why) a trade can't go through. Pass ATR (in
@@ -163,6 +164,7 @@ def _make(
         atr_pct=atr_pct,
         rationale=_explain(side, symbol, qty, est_cost, equity_pct, conviction, atr_pct, reasons, cfg, regime),
         reasons_json=list(reasons),
+        breakdown_json=breakdown,
         regime=regime,
         blocked_reason=blocked,
         status="pending",
@@ -206,7 +208,7 @@ def list_proposals(status: str | None = None) -> list[dict[str, Any]]:
         q = select(TradeProposal).order_by(TradeProposal.created_at.desc())
         if status:
             q = q.where(TradeProposal.status == status)
-        return [_serialize(r) for r in db.scalars(q.limit(200)).all()]
+        return [_serialize(r, db) for r in db.scalars(q.limit(200)).all()]
 
 
 def confirm(proposal_id: int) -> dict[str, Any]:
@@ -305,7 +307,21 @@ def _execute(db: Any, row: TradeProposal) -> dict[str, Any]:
     return {"ok": True, "order": order}
 
 
-def _serialize(r: TradeProposal) -> dict[str, Any]:
+def _serialize(r: TradeProposal, db: Any | None = None) -> dict[str, Any]:
+    breakdown = r.breakdown_json or {}
+    if not breakdown and db is not None:
+        # Backfill older proposal history from the persisted recommendation row.
+        # New proposals store breakdown_json directly, but existing history was
+        # created before that column existed. Prefer the recommendation snapshot
+        # closest to, but not after, the proposal creation time.
+        reco = db.scalars(
+            select(Recommendation)
+            .where(Recommendation.symbol == r.symbol)
+            .where(Recommendation.created_at <= r.created_at)
+            .order_by(Recommendation.created_at.desc())
+            .limit(1)
+        ).first()
+        breakdown = reco.breakdown if reco and reco.breakdown else {}
     return {
         "id": r.id,
         "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -320,6 +336,7 @@ def _serialize(r: TradeProposal) -> dict[str, Any]:
         "atr_pct": r.atr_pct,
         "rationale": r.rationale,
         "reasons": r.reasons_json or [],
+        "breakdown": breakdown,
         "regime": r.regime,
         "blocked_reason": r.blocked_reason,
         "status": r.status,
