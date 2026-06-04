@@ -188,6 +188,7 @@ def test_scheduler_cycle_publishes_refresh_message(monkeypatch):
     monkeypatch.setattr(scheduler.runtime_settings, "get", lambda key: False)
     monkeypatch.setattr(scheduler.proposals, "expire_stale", lambda: None)
     monkeypatch.setattr(scheduler.proposals, "build_from_reco", lambda reco: [])
+    monkeypatch.setattr(scheduler.proposals, "confirm_all", lambda: {"results": []})
 
     def fake_generate(persist=True):
         return {
@@ -209,6 +210,51 @@ def test_scheduler_cycle_publishes_refresh_message(monkeypatch):
     assert scheduler.LATEST["refresh_status"] == "complete"
     assert scheduler.LATEST["message"] == "Refresh completed, but no historical market data was available."
     assert scheduler.LATEST["errors"] == {"AAPL": "no bars"}
+
+
+def test_scheduler_cycle_executes_auto_trade_when_enabled(monkeypatch):
+    from app.services import scheduler
+
+    monkeypatch.setattr(scheduler, "settings", SimpleNamespace(has_credentials=True))
+    monkeypatch.setattr(scheduler.runtime_settings, "get", lambda key: key == "auto_trade")
+    monkeypatch.setattr(scheduler.proposals, "expire_stale", lambda: None)
+
+    built: list[dict[str, object]] = []
+    confirmed = False
+
+    def fake_build(reco):
+        built.append(reco)
+        return [{"id": 1, "symbol": "AMD", "side": "buy"}]
+
+    def fake_confirm_all():
+        nonlocal confirmed
+        confirmed = True
+        return {"results": [{"proposal_id": 1, "symbol": "AMD", "side": "buy", "ok": True}]}
+
+    monkeypatch.setattr(scheduler.proposals, "build_from_reco", fake_build)
+    monkeypatch.setattr(scheduler.proposals, "confirm_all", fake_confirm_all)
+    monkeypatch.setattr(
+        scheduler.recommender,
+        "generate",
+        lambda persist=True: {
+            "recommendations": [{"symbol": "AMD", "action": "BUY"}],
+            "top_buys": [{"symbol": "AMD"}],
+            "top_sells": [],
+            "generated_at": "now",
+            "regime": {"label": "risk_on"},
+            "configured": True,
+            "message": None,
+            "errors": {},
+        },
+    )
+
+    result = scheduler.run_cycle(force=True)
+
+    assert len(built) == 1
+    assert confirmed is True
+    assert result["proposals"] == 1
+    assert result["executed"] == 1
+    assert result["execution_errors"] == 0
 
 
 def test_paper_snapshot_preserves_broker_account_values(monkeypatch):

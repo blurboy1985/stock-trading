@@ -1,10 +1,9 @@
-"""Background scheduler: periodic recommendation refresh + auto-trade proposals.
+"""Background scheduler: periodic recommendation refresh + paper auto-trading.
 
 During market hours it regenerates recommendations every few minutes and, when
-``auto_trade`` is enabled, *proposes* entries/exits (it never places orders
-itself). The user confirms each proposal in the UI, and only that explicit
-confirm reaches the broker — always paper (see ``portfolio._live_gate``), so
-automation is fail-safe by construction.
+``auto_trade`` is enabled, creates auditable trade proposals and immediately
+executes confirmable ones through the same paper-only portfolio order path. Live
+orders remain blocked by ``portfolio._live_gate``.
 """
 from __future__ import annotations
 
@@ -93,17 +92,20 @@ def run_cycle(force: bool = False) -> dict[str, Any]:
 
         reco = recommender.generate(persist=True)
         proposed: list[dict[str, Any]] = []
+        executed: list[dict[str, Any]] = []
         proposal_error: str | None = None
 
         if runtime_settings.get("auto_trade") and reco.get("configured"):
-            # Supersede last cycle's untouched proposals, then propose fresh ones.
-            # Proposal building needs portfolio/account data; keep failures from
-            # preventing the recommendations page from loading.
+            # Supersede last cycle's untouched proposals, propose fresh trades,
+            # then immediately execute confirmable proposals. The proposal rows
+            # remain as an audit trail, while order placement still goes through
+            # portfolio.place_order/close_position and its paper/live safety gate.
             try:
                 proposals.expire_stale()
                 proposed = proposals.build_from_reco(reco)
+                executed = proposals.confirm_all().get("results", [])
             except Exception as exc:  # noqa: BLE001
-                log.exception("auto-proposal pass failed")
+                log.exception("auto-trade pass failed")
                 proposal_error = f"{type(exc).__name__}: {exc}"
 
         # Ratchet trailing stops on held positions (no-op unless enabled). Self-gated
@@ -133,6 +135,8 @@ def run_cycle(force: bool = False) -> dict[str, Any]:
         return {
             "recommendations": len(reco.get("recommendations", [])),
             "proposals": len(proposed),
+            "executed": len([r for r in executed if r.get("ok")]),
+            "execution_errors": len([r for r in executed if not r.get("ok")]),
             "proposal_error": proposal_error,
             "trailing_moves": len(trail.get("moves", [])),
             "message": reco.get("message"),
