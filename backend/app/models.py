@@ -71,11 +71,12 @@ class OrderRecord(Base):
 
 
 class TradeProposal(Base):
-    """A pending auto-trade awaiting human confirmation.
+    """Auditable auto-trade proposal and outcome.
 
-    When ``auto_trade`` is on, the scheduler *proposes* trades each cycle instead
-    of placing them; the user confirms or rejects each one. This table is the
-    audit trail of every proposal and its outcome.
+    When ``auto_trade`` is on, the scheduler records proposed entries/exits, then
+    immediately executes confirmable rows through the paper-safe order path. Rows
+    may still remain pending/rejected/failed/expired when risk gates or manual
+    review workflows intervene.
     """
 
     __tablename__ = "trade_proposals"

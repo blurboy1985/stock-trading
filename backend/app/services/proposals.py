@@ -1,10 +1,11 @@
 """Auto-trade proposals: propose → confirm → execute, with a full audit trail.
 
-When ``auto_trade`` is enabled the scheduler *proposes* trades each cycle instead
-of placing them. Each proposal records what we'd do, the sized quantity, an
-estimated cost, and a human-readable rationale, plus a dry-run risk check. The
-user confirms or rejects; only an explicit confirm reaches the broker (always
-paper — see ``portfolio.place_order`` / ``portfolio._live_gate``).
+When ``auto_trade`` is enabled the scheduler creates auditable proposal rows each
+cycle and immediately executes confirmable ones through the same paper-only order
+path. Manual confirm/reject endpoints still exist for review workflows and for
+any proposal left pending by an execution/risk issue. Live orders remain blocked
+by ``portfolio.place_order`` / ``portfolio._live_gate`` unless live mode is
+explicitly enabled elsewhere.
 """
 from __future__ import annotations
 
@@ -36,11 +37,12 @@ def _utcnow() -> dt.datetime:
 
 
 def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
-    """Propose (don't place) entries/exits for the latest recommendations.
+    """Create auditable entry/exit rows for the latest recommendations.
 
     Mirrors the old auto-trader's selection logic: buy top-ranked BUYs we don't
-    hold, sell holdings that flipped to SELL — but persists each as a *pending*
-    proposal awaiting human confirmation.
+    hold, sell holdings that flipped to SELL. The scheduler normally follows this
+    with :func:`confirm_all` so eligible rows are auto-executed; standalone callers
+    can still review/confirm manually.
     """
     snap = portfolio.snapshot()
     if not snap["configured"]:
