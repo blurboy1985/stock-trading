@@ -75,6 +75,12 @@ def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
             ).all()
         }
 
+        # Work against a virtual copy of positions while building a batch. A
+        # single cycle can propose several buys before any of them fills, so
+        # sizing each candidate against only the starting portfolio creates
+        # doomed rows that later fail the same risk checks during confirmation.
+        planned_positions = [dict(p) for p in positions]
+
         # Exits: any held symbol now rated SELL.
         sell_syms = {d["symbol"] for d in reco.get("recommendations", []) if d["action"] == "SELL"}
         for sym, p in held.items():
@@ -88,7 +94,7 @@ def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
                 continue
             created.append(
                 _make(db, "sell", sym, float(p["qty"]), price, d, cfg,
-                      account, positions, equity, regime)
+                      account, planned_positions, equity, regime)
             )
 
         # Benchmark core / cash sweep: keep idle capital invested in a broad ETF
@@ -98,9 +104,15 @@ def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
         if core is not None:
             sym, qty, price, d = core
             if (sym, "buy") not in pending and (sym, "buy") not in open_orders:
-                created.append(
-                    _make(db, "buy", sym, qty, price, d, cfg, account, positions, equity, regime)
-                )
+                qty = _cap_buy_qty_for_risk(account, planned_positions, sym, qty, price, cfg)
+                if qty > 0:
+                    created.append(
+                        _make(
+                            db, "buy", sym, qty, price, d, cfg,
+                            account, planned_positions, equity, regime,
+                        )
+                    )
+                    _apply_virtual_buy(planned_positions, sym, qty, price)
 
         # Entries: top BUYs we don't already hold.
         core_symbol = str(cfg.get("core_symbol") or "").upper() if cfg.get("core_target_pct") else ""
@@ -114,12 +126,14 @@ def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
             if price <= 0:
                 continue
             qty = _entry_qty(d, cfg, equity, price)
+            qty = _cap_buy_qty_for_risk(account, planned_positions, sym, qty, price, cfg)
             if qty <= 0:
                 continue
             created.append(
                 _make(db, "buy", sym, qty, price, d, cfg,
-                      account, positions, equity, regime)
+                      account, planned_positions, equity, regime)
             )
+            _apply_virtual_buy(planned_positions, sym, qty, price)
 
         db.commit()
         return [_serialize(r) for r in created]
@@ -144,6 +158,69 @@ def _entry_qty(d: dict[str, Any], cfg: dict[str, Any], equity: float, price: flo
             )
         )
     return float(risk.size_position(equity, price, cfg["max_position_pct"]))
+
+
+def _cap_buy_qty_for_risk(
+    account: dict[str, Any],
+    positions: list[dict[str, Any]],
+    symbol: str,
+    qty: float,
+    price: float,
+    cfg: dict[str, Any],
+) -> int:
+    """Reduce a BUY quantity so the proposal is actually confirmable.
+
+    Recommendation sizing is intentionally signal-driven, but confirmation goes
+    through hard portfolio risk gates. This helper keeps the audit trail clean by
+    clipping proposed quantities to the remaining per-symbol, total-exposure, and
+    buying-power budgets, including buys already planned in this same cycle.
+    """
+    if qty <= 0 or price <= 0:
+        return 0
+    equity = float(account.get("equity") or 0.0)
+    if equity <= 0:
+        return 0
+
+    buying_power_budget = max(0.0, float(account.get("buying_power") or 0.0))
+    invested = sum(float(p.get("market_value") or 0.0) for p in positions)
+    total_budget = max(0.0, equity * float(cfg["max_total_exposure_pct"]) - invested)
+
+    existing = next(
+        (p for p in positions if str(p.get("symbol", "")).upper() == symbol.upper()),
+        None,
+    )
+    existing_val = float(existing.get("market_value") or 0.0) if existing else 0.0
+    position_limit = float(cfg["max_position_pct"])
+    core_symbol = str(cfg.get("core_symbol") or "").upper()
+    core_target = float(cfg.get("core_target_pct") or 0.0)
+    if core_target > 0 and symbol.upper() == core_symbol:
+        position_limit = max(
+            position_limit,
+            core_target + float(cfg.get("core_rebalance_threshold_pct") or 0.0),
+        )
+    position_budget = max(0.0, equity * position_limit - existing_val)
+
+    budget = min(float(qty) * price, buying_power_budget, total_budget, position_budget)
+    if budget <= 0:
+        return 0
+    return int(budget // price)
+
+
+def _apply_virtual_buy(
+    positions: list[dict[str, Any]], symbol: str, qty: float, price: float
+) -> None:
+    """Reflect an in-cycle planned buy in the virtual positions list."""
+    sym = symbol.upper()
+    value = float(qty) * float(price)
+    existing = next(
+        (p for p in positions if str(p.get("symbol", "")).upper() == sym),
+        None,
+    )
+    if existing is None:
+        positions.append({"symbol": sym, "qty": float(qty), "market_value": value})
+        return
+    existing["qty"] = float(existing.get("qty") or 0.0) + float(qty)
+    existing["market_value"] = float(existing.get("market_value") or 0.0) + value
 
 
 def _core_buy_candidate(
