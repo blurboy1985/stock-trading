@@ -69,3 +69,66 @@ def test_virtual_buy_prevents_second_same_cycle_proposal_from_exceeding_cap():
     assert second_qty == 20
     assert risk.validate_order(account, positions, "AAPL", "buy", second_qty, 100.0).ok
     assert not risk.validate_order(account, positions, "AAPL", "buy", second_qty + 1, 100.0).ok
+
+
+def test_core_rebalance_sells_weak_non_core_holdings_to_make_rsp_room():
+    equity = 100_000.0
+    cfg = _cfg()
+    positions = [
+        {"symbol": "RSP", "qty": 150.0, "market_value": 32_000.0, "current_price": 213.33},
+        {"symbol": "WEAK", "qty": 100.0, "market_value": 30_000.0, "current_price": 300.0},
+        {"symbol": "MID", "qty": 100.0, "market_value": 25_000.0, "current_price": 250.0},
+        {"symbol": "STRONG", "qty": 100.0, "market_value": 18_000.0, "current_price": 180.0},
+    ]
+    reco = {
+        "WEAK": {"symbol": "WEAK", "score": -0.3, "rank_score": -1.0, "reasons": ["weakest"]},
+        "MID": {"symbol": "MID", "score": 0.1, "rank_score": 0.2, "reasons": ["middle"]},
+        "STRONG": {"symbol": "STRONG", "score": 0.8, "rank_score": 2.0, "reasons": ["strongest"]},
+    }
+
+    sells = proposals._core_rebalance_sell_candidates(cfg, positions, equity, reco)
+
+    assert [s[0] for s in sells] == ["WEAK", "MID", "STRONG"]
+    assert sum(qty * price for _sym, qty, price, _d in sells) >= 63_000.0
+    assert "core rebalance" in sells[0][3]["reasons"][0]
+
+
+def test_core_rebalance_sells_nothing_when_rsp_can_be_bought_from_cash():
+    equity = 100_000.0
+    cfg = _cfg()
+    positions = [
+        {"symbol": "RSP", "qty": 150.0, "market_value": 32_000.0, "current_price": 213.33},
+        {"symbol": "AAPL", "qty": 10.0, "market_value": 5_000.0, "current_price": 500.0},
+    ]
+
+    sells = proposals._core_rebalance_sell_candidates(cfg, positions, equity, {})
+
+    assert sells == []
+
+
+def test_core_buy_becomes_possible_after_rebalance_sells_are_applied():
+    equity = 100_000.0
+    account = {"equity": equity, "buying_power": 100_000.0}
+    cfg = _cfg()
+    positions = [
+        {"symbol": "RSP", "qty": 150.0, "market_value": 32_000.0, "current_price": 213.33},
+        {"symbol": "WEAK", "qty": 100.0, "market_value": 30_000.0, "current_price": 300.0},
+        {"symbol": "MID", "qty": 100.0, "market_value": 25_000.0, "current_price": 250.0},
+        {"symbol": "STRONG", "qty": 100.0, "market_value": 18_000.0, "current_price": 180.0},
+    ]
+    reco = {"RSP": {"symbol": "RSP", "price": 200.0}}
+
+    assert proposals._cap_buy_qty_for_risk(account, positions, "RSP", 190, 200.0, cfg) == 0
+    for sym, _qty, _price, _d in proposals._core_rebalance_sell_candidates(
+        cfg, positions, equity, {}
+    ):
+        proposals._apply_virtual_sell(positions, sym)
+
+    core = proposals._core_buy_candidate(cfg, account, positions, equity, reco, regime="risk_on")
+    assert core is not None
+    sym, qty, price, _d = core
+    capped_qty = proposals._cap_buy_qty_for_risk(account, positions, sym, qty, price, cfg)
+
+    assert sym == "RSP"
+    assert capped_qty > 0
+    assert risk.validate_order(account, positions, sym, "buy", capped_qty, price).ok

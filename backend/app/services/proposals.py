@@ -80,6 +80,7 @@ def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
         # sizing each candidate against only the starting portfolio creates
         # doomed rows that later fail the same risk checks during confirmation.
         planned_positions = [dict(p) for p in positions]
+        proposed_orders: set[tuple[str, str]] = set()
 
         # Exits: any held symbol now rated SELL.
         sell_syms = {d["symbol"] for d in reco.get("recommendations", []) if d["action"] == "SELL"}
@@ -96,11 +97,30 @@ def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
                 _make(db, "sell", sym, float(p["qty"]), price, d, cfg,
                       account, planned_positions, equity, regime)
             )
+            proposed_orders.add((sym, "sell"))
+            _apply_virtual_sell(planned_positions, sym)
+
+        # If the benchmark core is underweight but the portfolio is already too
+        # invested to buy it up to target, sell the weakest non-core holdings
+        # first. The scheduler confirms rows in insertion order, so these exits
+        # free cash/risk budget before the core buy row below is attempted.
+        for sym, qty, price, d in _core_rebalance_sell_candidates(
+            cfg, planned_positions, equity, reco_by_sym
+        ):
+            key = (sym, "sell")
+            if key in pending or key in open_orders or key in proposed_orders:
+                continue
+            created.append(
+                _make(db, "sell", sym, qty, price, d, cfg,
+                      account, planned_positions, equity, regime)
+            )
+            proposed_orders.add(key)
+            _apply_virtual_sell(planned_positions, sym)
 
         # Benchmark core / cash sweep: keep idle capital invested in a broad ETF
         # (usually RSP) before the active stock overlay. This is buy-only here:
         # we do not tactically exit the core just because no active signal fires.
-        core = _core_buy_candidate(cfg, account, positions, equity, reco_by_sym, regime)
+        core = _core_buy_candidate(cfg, account, planned_positions, equity, reco_by_sym, regime)
         if core is not None:
             sym, qty, price, d = core
             if (sym, "buy") not in pending and (sym, "buy") not in open_orders:
@@ -120,7 +140,9 @@ def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
             sym = d["symbol"]
             if core_symbol and sym == core_symbol:
                 continue
-            if sym in held or (sym, "buy") in pending or (sym, "buy") in open_orders:
+            if any(str(p.get("symbol", "")).upper() == sym for p in planned_positions):
+                continue
+            if (sym, "buy") in pending or (sym, "buy") in open_orders:
                 continue
             price = float(d.get("price") or 0.0)
             if price <= 0:
@@ -221,6 +243,114 @@ def _apply_virtual_buy(
         return
     existing["qty"] = float(existing.get("qty") or 0.0) + float(qty)
     existing["market_value"] = float(existing.get("market_value") or 0.0) + value
+
+
+def _apply_virtual_sell(positions: list[dict[str, Any]], symbol: str) -> None:
+    """Remove a full-position sell from the in-cycle virtual portfolio."""
+    sym = symbol.upper()
+    positions[:] = [
+        p for p in positions if str(p.get("symbol", "")).upper() != sym
+    ]
+
+
+def _position_price(p: dict[str, Any]) -> float:
+    price = float(p.get("current_price") or p.get("price") or 0.0)
+    if price > 0:
+        return price
+    qty = float(p.get("qty") or 0.0)
+    value = float(p.get("market_value") or 0.0)
+    return (value / qty) if qty > 0 and value > 0 else 0.0
+
+
+def _core_rebalance_sell_candidates(
+    cfg: dict[str, Any],
+    positions: list[dict[str, Any]],
+    equity: float,
+    reco_by_sym: dict[str, dict[str, Any]],
+) -> list[tuple[str, float, float, dict[str, Any]]]:
+    """Full-position exits needed to make room for an underweight core ETF.
+
+    The core buy helper can sweep idle cash into RSP, but when the active overlay
+    already consumes too much exposure, buying the gap would violate the total
+    exposure cap. In that case, sell lowest-ranked non-core holdings until a
+    later core buy can move toward target while staying under the cap. Sells are
+    full-position because execution uses ``close_position`` to cancel bracket
+    legs safely before flattening the broker position.
+    """
+    target_pct = float(cfg.get("core_target_pct") or 0.0)
+    if target_pct <= 0 or equity <= 0:
+        return []
+    max_total = float(cfg.get("max_total_exposure_pct") or 1.0)
+    core_symbol = str(cfg.get("core_symbol") or "RSP").upper()
+    threshold = float(cfg.get("core_rebalance_threshold_pct") or 0.02)
+
+    invested = sum(float(p.get("market_value") or 0.0) for p in positions)
+    held_core = next(
+        (p for p in positions if str(p.get("symbol", "")).upper() == core_symbol),
+        None,
+    )
+    current_core = float(held_core.get("market_value") or 0.0) if held_core else 0.0
+    target_value = equity * min(1.0, max(0.0, target_pct))
+    core_gap = max(0.0, target_value - current_core)
+    if core_gap / equity < threshold:
+        return []
+
+    # If the core gap can be bought inside the total exposure cap, no rebalance
+    # sells are needed; the normal core cash-sweep proposal can handle it.
+    sell_needed = invested + core_gap - (equity * max_total)
+    if sell_needed <= 0:
+        return []
+
+    candidates: list[tuple[float, float, str, float, float, dict[str, Any]]] = []
+    for p in positions:
+        sym = str(p.get("symbol", "")).upper()
+        if not sym or sym == core_symbol:
+            continue
+        qty = float(p.get("qty") or 0.0)
+        value = float(p.get("market_value") or 0.0)
+        price = _position_price(p)
+        if qty <= 0 or value <= 0 or price <= 0:
+            continue
+        d = dict(reco_by_sym.get(sym) or {})
+        rank = float(d.get("rank_score", d.get("score", 0.0)) or 0.0)
+        candidates.append((rank, -value, sym, qty, price, d))
+
+    out: list[tuple[str, float, float, dict[str, Any]]] = []
+    freed = 0.0
+    for _rank, _neg_value, sym, qty, price, d in sorted(candidates):
+        value = qty * price
+        reasons = [
+            f"core rebalance: free capacity for {core_symbol} toward {target_pct:.0%} target",
+            f"selling non-core holding so total exposure can stay below {max_total:.0%}",
+        ]
+        if d.get("reasons"):
+            reasons.extend(list(d["reasons"])[:3])
+        d.update(
+            {
+                "symbol": sym,
+                "action": "SELL",
+                "price": price,
+                "reasons": reasons,
+                "breakdown": d.get("breakdown") or {
+                    "core_rebalance": {
+                        "score": -1.0,
+                        "weight": 1.0,
+                        "reasons": reasons[:2],
+                        "metrics": {
+                            "core_symbol": core_symbol,
+                            "core_target_pct": target_pct,
+                            "current_core_pct": current_core / equity,
+                            "sell_needed": sell_needed,
+                        },
+                    }
+                },
+            }
+        )
+        out.append((sym, qty, price, d))
+        freed += value
+        if freed >= sell_needed:
+            break
+    return out
 
 
 def _core_buy_candidate(
@@ -335,6 +465,13 @@ def _explain(
     sig = " · ".join(reasons[:4]) if reasons else "ranked by risk-adjusted score"
     reg = f" Regime: {regime}." if regime else ""
     if side == "sell":
+        if reasons and str(reasons[0]).startswith("core rebalance"):
+            return (
+                f"SELL {qty_s} {symbol} ({cost}) — core rebalance exit to free "
+                f"capacity for {cfg.get('core_symbol', 'RSP')} toward the "
+                f"{float(cfg.get('core_target_pct') or 0) * 100:.0f}% target.{reg} "
+                f"Signals: {sig}."
+            )
         return (
             f"SELL {qty_s} {symbol} ({cost}) — rating flipped to SELL; exiting "
             f"the position.{reg} Signals: {sig}."
