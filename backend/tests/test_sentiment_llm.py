@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app.strategies import sentiment_llm
+from app.strategies import sentiment, sentiment_llm
 
 
 def test_llm_sentiment_uses_hermes_chatgpt_cli(monkeypatch):
@@ -44,3 +44,19 @@ def test_llm_sentiment_falls_back_on_cli_failure(monkeypatch):
     assert sentiment_llm.batch_polarity(
         [{"headline": "Some headline", "summary": "Some summary"}]
     ) == {}
+
+
+def test_llm_sentiment_can_skip_misses_and_use_lexicon_fallback(monkeypatch):
+    def fail_if_called(*args, **kwargs):  # pragma: no cover - assertion helper
+        raise AssertionError("should not launch Hermes for cache misses")
+
+    monkeypatch.setattr(sentiment_llm.subprocess, "run", fail_if_called)
+    sentiment_llm._CACHE.clear()
+
+    item = {"headline": "Company beats earnings and raises guidance", "summary": ""}
+    assert sentiment_llm.batch_polarity([item], query_missing=False) == {}
+
+    res = sentiment.score_headlines([item], backend="llm", llm_query_missing=False)
+    assert res.metrics["backend"] == "lexicon"
+    assert "finance lexicon" in res.reasons[0]
+    assert res.score > 0

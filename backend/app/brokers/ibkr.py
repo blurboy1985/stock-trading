@@ -852,18 +852,28 @@ def get_portfolio_history(period: str = "1M", timeframe: str = "1D") -> dict[str
         return _get_portfolio_history_unlocked(period, timeframe)
 
 def get_news(symbols: list[str], limit: int = 20, include_external: bool = False) -> list[dict[str, Any]]:
-    """Best-effort no-key Yahoo Finance news fallback for sentiment."""
+    """Best-effort no-key Yahoo Finance news fallback for sentiment.
+
+    ``limit`` is applied per symbol. The recommender asks for a broad universe in
+    one call; treating ``limit`` as a global cap meant the first few symbols got
+    all headlines while the rest saw empty news and neutral sentiment.
+    """
     out: list[dict[str, Any]] = []
+    per_symbol_limit = max(1, int(limit or 20))
     try:
         import yfinance as yf
     except Exception:  # noqa: BLE001
         return []
     for symbol in symbols:
+        sym = symbol.upper()
         try:
-            rows = getattr(yf.Ticker(symbol), "news", None) or []
+            rows = getattr(yf.Ticker(sym), "news", None) or []
         except Exception:  # noqa: BLE001
             continue
-        for n in rows[:limit]:
+        symbol_count = 0
+        for n in rows:
+            if symbol_count >= per_symbol_limit:
+                break
             content = n.get("content") if isinstance(n, dict) else None
             data = content if isinstance(content, dict) else n
             headline = (data.get("title") or data.get("headline") or "").strip()
@@ -876,13 +886,12 @@ def get_news(symbols: list[str], limit: int = 20, include_external: bool = False
             out.append({
                 "headline": headline,
                 "summary": data.get("summary") or "",
-                "symbols": [symbol.upper()],
+                "symbols": [sym],
                 "source": provider.get("displayName") if isinstance(provider, dict) else "Yahoo Finance",
                 "url": click.get("url") if isinstance(click, dict) else data.get("link") or "",
                 "created_at": created.isoformat() if created else None,
             })
-            if len(out) >= limit:
-                return out
+            symbol_count += 1
     return out
 
 

@@ -134,7 +134,18 @@ def generate(persist: bool = True) -> dict[str, Any]:
         from ..strategies import sentiment_llm
 
         all_items = [item for items in news.values() for item in items]
-        sentiment_llm.prewarm(all_items)
+        # The LLM path is best-effort context, not a reason to stall a market-hour
+        # refresh. For broad universes, a single giant prompt often times out and
+        # then the old per-symbol fallback would launch dozens of Hermes calls.
+        # Prewarm only modest batches; the per-symbol scorer below uses cached
+        # LLM scores when present and otherwise falls back to the local lexicon.
+        distinct: dict[str, dict[str, Any]] = {}
+        for item in all_items:
+            text = f"{item.get('headline', '')}. {item.get('summary', '')}".strip()
+            if text:
+                distinct.setdefault(text, item)
+        if len(distinct) <= 60:
+            sentiment_llm.prewarm(list(distinct.values()))
 
     # 1) Batch-fetch bars in a single request (needed up front for breadth +
     #    cross-sectional momentum). Batching keeps a large-universe scan fast.
@@ -201,6 +212,7 @@ def generate(persist: bool = True) -> dict[str, Any]:
                 sentiment_backend=cfg["sentiment_backend"],
                 sentiment_halflife_days=cfg["sentiment_halflife_days"],
                 sentiment_lm_weight=cfg["sentiment_lm_weight"],
+                sentiment_llm_query_missing=False,
                 sector_baseline=sector_baseline,
                 info=info,
                 earnings_blackout_days=cfg["earnings_blackout_days"],

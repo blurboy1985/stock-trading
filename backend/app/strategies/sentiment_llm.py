@@ -104,13 +104,18 @@ def _query_chatgpt(prompt: str, model: str | None) -> str:
 
 
 def batch_polarity(
-    items: list[dict[str, Any]], model: str | None = None
+    items: list[dict[str, Any]],
+    model: str | None = None,
+    *,
+    query_missing: bool = True,
 ) -> dict[str, float]:
     """Score a batch of news items with ChatGPT → ``{item_text: polarity}``.
 
-    Headlines already in :data:`_CACHE` are served from it; only unseen
-    headlines hit ChatGPT (a single call for the whole unseen batch). Returns
-    ``{}`` on any failure so the caller falls back to the lexicon.
+    Headlines already in :data:`_CACHE` are served from it. When
+    ``query_missing`` is true, unseen headlines hit ChatGPT in one batch;
+    otherwise misses are left empty so callers can fall back to the local lexicon.
+    This keeps broad universe refreshes from making one slow LLM call per symbol
+    after a prewarm miss/timeout.
     """
     if not items:
         return {}
@@ -124,7 +129,7 @@ def batch_polarity(
             continue
         if text in _CACHE:
             out[text] = _CACHE[text]
-        else:
+        elif query_missing:
             todo.setdefault(text, it)
 
     if todo:

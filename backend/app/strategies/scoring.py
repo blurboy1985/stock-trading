@@ -161,6 +161,7 @@ def evaluate_symbol(
     sentiment_halflife_days: float = 3.0,
     sentiment_lm_weight: float = 0.5,
     sentiment_llm_model: str | None = None,
+    sentiment_llm_query_missing: bool = True,
     sector_baseline: dict[str, float] | None = None,
     info: dict[str, Any] | None = None,
     earnings_blackout_days: int = 0,
@@ -197,6 +198,7 @@ def evaluate_symbol(
             lm_weight=sentiment_lm_weight,
             backend=sentiment_backend,
             llm_model=sentiment_llm_model,
+            llm_query_missing=sentiment_llm_query_missing,
         )
     if include_fundamentals:
         results["fundamentals"] = fundamentals_signal(
