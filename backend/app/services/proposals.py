@@ -91,9 +91,23 @@ def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
                       account, positions, equity, regime)
             )
 
+        # Benchmark core / cash sweep: keep idle capital invested in a broad ETF
+        # (usually RSP) before the active stock overlay. This is buy-only here:
+        # we do not tactically exit the core just because no active signal fires.
+        core = _core_buy_candidate(cfg, account, positions, equity, reco_by_sym, regime)
+        if core is not None:
+            sym, qty, price, d = core
+            if (sym, "buy") not in pending and (sym, "buy") not in open_orders:
+                created.append(
+                    _make(db, "buy", sym, qty, price, d, cfg, account, positions, equity, regime)
+                )
+
         # Entries: top BUYs we don't already hold.
+        core_symbol = str(cfg.get("core_symbol") or "").upper() if cfg.get("core_target_pct") else ""
         for d in reco.get("top_buys", []):
             sym = d["symbol"]
+            if core_symbol and sym == core_symbol:
+                continue
             if sym in held or (sym, "buy") in pending or (sym, "buy") in open_orders:
                 continue
             price = float(d.get("price") or 0.0)
@@ -130,6 +144,65 @@ def _entry_qty(d: dict[str, Any], cfg: dict[str, Any], equity: float, price: flo
             )
         )
     return float(risk.size_position(equity, price, cfg["max_position_pct"]))
+
+
+def _core_buy_candidate(
+    cfg: dict[str, Any],
+    account: dict[str, Any],
+    positions: list[dict[str, Any]],
+    equity: float,
+    reco_by_sym: dict[str, dict[str, Any]],
+    regime: str | None,
+) -> tuple[str, int, float, dict[str, Any]] | None:
+    """Return a buy proposal that sweeps idle cash into the benchmark core."""
+    target_pct = float(cfg.get("core_target_pct") or 0.0)
+    if target_pct <= 0 or equity <= 0:
+        return None
+    if regime and regime.lower() in {"risk_off", "bear"}:
+        return None
+    sym = str(cfg.get("core_symbol") or "RSP").upper()
+    threshold = float(cfg.get("core_rebalance_threshold_pct") or 0.02)
+    held = next((p for p in positions if p["symbol"] == sym), None)
+    current_value = float(held.get("market_value") or 0.0) if held else 0.0
+    target_value = equity * min(1.0, max(0.0, target_pct))
+    gap = target_value - current_value
+    if gap / equity < threshold:
+        return None
+    price = float((reco_by_sym.get(sym) or {}).get("price") or 0.0)
+    if price <= 0:
+        try:
+            price = float(ac.get_latest_quote(sym).get("mid") or 0.0)
+        except Exception:  # noqa: BLE001 — no quote, no core proposal this cycle
+            price = 0.0
+    if price <= 0:
+        return None
+    budget = min(gap, float(account.get("buying_power") or 0.0))
+    qty = int(budget // price)
+    if qty <= 0:
+        return None
+    d = dict(reco_by_sym.get(sym) or {})
+    d.update(
+        {
+            "symbol": sym,
+            "action": "BUY",
+            "price": price,
+            "conviction": d.get("conviction", 1.0),
+            "atr_pct": d.get("atr_pct"),
+            "reasons": [
+                f"benchmark core cash sweep toward {target_pct:.0%} target",
+                "keeps idle cash invested while active stock signals run as overlay",
+            ],
+            "breakdown": d.get("breakdown") or {
+                "core": {
+                    "score": 1.0,
+                    "weight": 1.0,
+                    "reasons": ["benchmark core allocation"],
+                    "metrics": {"target_pct": target_pct, "current_pct": current_value / equity},
+                }
+            },
+        }
+    )
+    return sym, qty, price, d
 
 
 def _make(

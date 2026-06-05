@@ -41,6 +41,9 @@ class BacktestRequest(BaseModel):
     max_position_pct: float = 0.10
     min_dollar_volume: float = 0.0
     min_price: float = 0.0
+    core_symbol: str | None = None
+    core_target_pct: float = 0.0
+    core_rebalance_threshold_pct: float = 0.02
     # Walk-forward / sweep only.
     folds: int = 4
 
@@ -54,6 +57,8 @@ def _fetch_bars(req: "BacktestRequest") -> dict:
     # engine can read its trend (it also trades, just like SPY in the watchlist).
     if req.regime_filter and req.benchmark_symbol.upper() not in symbols:
         symbols.append(req.benchmark_symbol.upper())
+    if req.core_target_pct > 0 and req.core_symbol and req.core_symbol.upper() not in symbols:
+        symbols.append(req.core_symbol.upper())
 
     bars_by_symbol = {}
     try:
@@ -92,6 +97,9 @@ def _build_config(req: "BacktestRequest", **overrides) -> BacktestConfig:
         max_position_pct=req.max_position_pct,
         min_dollar_volume=req.min_dollar_volume,
         min_price=req.min_price,
+        core_symbol=req.core_symbol.upper() if req.core_symbol else None,
+        core_target_pct=req.core_target_pct,
+        core_rebalance_threshold_pct=req.core_rebalance_threshold_pct,
         **overrides,
     )
 

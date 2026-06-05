@@ -298,6 +298,9 @@ export interface AppSettings {
     news_sources?: string[];
     news_scope?: "watchlist" | "universe";
     news_per_source_limit?: number;
+    core_symbol?: string;
+    core_target_pct?: number;
+    core_rebalance_threshold_pct?: number;
   };
   watchlist: string[];
   news?: {

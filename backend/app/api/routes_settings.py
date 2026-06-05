@@ -48,6 +48,9 @@ class SettingsUpdate(BaseModel):
     news_sources: list[str] | None = None
     news_scope: str | None = None
     news_per_source_limit: int | None = None
+    core_symbol: str | None = None
+    core_target_pct: float | None = None
+    core_rebalance_threshold_pct: float | None = None
 
 
 @router.get("")

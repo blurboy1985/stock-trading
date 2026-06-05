@@ -75,6 +75,13 @@ DEFAULTS: dict[str, Any] = {
     "news_sources": ["yfinance"],        # subset of news_sources.ALL_SOURCES
     "news_scope": "watchlist",           # "watchlist" | "universe" for extra sources
     "news_per_source_limit": 15,         # headlines fetched per extra source/symbol
+    # ── Benchmark core / cash-sweep overlay ────────────────────────────
+    # When enabled (>0), auto-trade keeps this pct of equity in a broad ETF such
+    # as RSP. Active stock proposals then operate as an overlay instead of letting
+    # unused cash sit idle during risk-on markets.
+    "core_symbol": "RSP",
+    "core_target_pct": 0.0,
+    "core_rebalance_threshold_pct": 0.02,
 }
 
 

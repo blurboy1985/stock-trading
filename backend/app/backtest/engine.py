@@ -65,6 +65,13 @@ class BacktestConfig:
     max_position_pct: float = 0.10
     min_dollar_volume: float = 0.0  # 0 => liquidity guardrail off
     min_price: float = 0.0
+    # ── Benchmark core / cash-sweep overlay ────────────────────────────
+    # Keeps idle capital invested in a broad benchmark ETF instead of sitting in
+    # cash. The active strategy skips this symbol so it does not double-count the
+    # benchmark leg.
+    core_symbol: str | None = None
+    core_target_pct: float = 0.0
+    core_rebalance_threshold_pct: float = 0.02
 
 
 @dataclass
@@ -202,8 +209,16 @@ def run_backtest(
                 bench.iloc[:i].dropna()
             )["score"]
 
+        # 2a) Keep the configured benchmark core invested before active signals.
+        # This turns idle cash into RSP/benchmark exposure, while the active
+        # strategy remains an overlay that can rotate into stronger names.
+        _rebalance_core(state, aligned, i, config)
+
         # 3) Signal-driven actions, executed at this bar's open.
+        core_symbol = (config.core_symbol or "").upper() if config.core_target_pct > 0 else ""
         for sym in symbols:
+            if core_symbol and sym == core_symbol:
+                continue
             window = windows[sym]
             if len(window) < config.warmup:
                 continue
@@ -318,6 +333,95 @@ def _alloc(config: BacktestConfig, decision: dict[str, Any], equal_w: float) -> 
         target_risk_pct=config.target_risk_pct,
         max_position_pct=config.max_position_pct,
     )
+
+
+def _rebalance_core(
+    state: _State,
+    aligned: dict[str, pd.DataFrame],
+    i: int,
+    config: BacktestConfig,
+) -> None:
+    """Maintain a buy-and-hold benchmark core allocation.
+
+    The core is intentionally simple: keep roughly ``core_target_pct`` of equity
+    in ``core_symbol`` and skip active signal trading for that same symbol. This
+    models the recommended cash-sweep behavior where idle capital defaults to RSP
+    instead of cash, while the active strategy acts as an overlay.
+    """
+    if not config.core_symbol or config.core_target_pct <= 0:
+        return
+    sym = config.core_symbol.upper()
+    if sym not in aligned:
+        return
+    bar = aligned[sym].iloc[i]
+    if pd.isna(bar["open"]) or pd.isna(bar["close"]):
+        return
+    equity = _equity(state, aligned, i)
+    if equity <= 0:
+        return
+    target_pct = max(0.0, min(1.0, config.core_target_pct))
+    threshold = max(0.0, config.core_rebalance_threshold_pct)
+    px = _slip(float(bar["open"]), config.slippage_bps, "buy")
+    if px <= 0:
+        return
+    pos = state.positions.get(sym)
+    current_value = (pos.qty * float(bar["close"])) if pos else 0.0
+    target_value = equity * target_pct
+    gap = target_value - current_value
+    if abs(gap) / equity < threshold:
+        return
+    if gap > 0:
+        qty = int(min(gap, state.cash - config.commission) // px)
+        if qty <= 0:
+            return
+        state.cash -= qty * px + config.commission
+        state.buy_notional += qty * px
+        if pos:
+            total_cost = pos.qty * pos.entry_price + qty * px
+            pos.qty += qty
+            pos.entry_price = total_cost / pos.qty
+        else:
+            state.positions[sym] = _Position(
+                qty=qty,
+                entry_price=px,
+                entry_date=pd.Timestamp(aligned[sym].index[i]).isoformat(),
+                entry_i=i,
+                driver="core",
+                highest_close=px,
+            )
+        return
+
+    # Only trim, never fully tactical-exit, the benchmark core when it drifts far
+    # above target. This keeps it a persistent buy-and-hold anchor.
+    if not pos:
+        return
+    sell_px = _slip(float(bar["open"]), config.slippage_bps, "sell")
+    qty = int(min(pos.qty, abs(gap) // sell_px))
+    if qty <= 0:
+        return
+    if qty >= pos.qty:
+        _close(state, sym, sell_px, pd.Timestamp(aligned[sym].index[i]).isoformat(), i, config, "core_rebalance")
+    else:
+        pos.qty -= qty
+        proceeds = qty * sell_px - config.commission
+        state.cash += proceeds
+        pnl = proceeds - qty * pos.entry_price
+        state.attribution[pos.driver] += pnl
+        state.trades.append(
+            {
+                "symbol": sym,
+                "qty": qty,
+                "entry_date": pos.entry_date,
+                "entry_price": round(pos.entry_price, 2),
+                "exit_date": pd.Timestamp(aligned[sym].index[i]).isoformat(),
+                "exit_price": round(sell_px, 2),
+                "pnl": round(pnl, 2),
+                "return_pct": round(sell_px / pos.entry_price - 1, 4),
+                "exit_reason": "core_rebalance",
+                "driver": pos.driver,
+                "bars_held": i - pos.entry_i,
+            }
+        )
 
 
 def _equity(state: _State, aligned: dict[str, pd.DataFrame], i: int) -> float:
