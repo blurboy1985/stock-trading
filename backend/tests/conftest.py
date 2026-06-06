@@ -45,3 +45,20 @@ def breakout() -> pd.DataFrame:
     df.iloc[-1, df.columns.get_loc("volume")] = 5_000_000.0
     df.iloc[-1, df.columns.get_loc("high")] = 113.0
     return df
+
+
+# ---------------------------------------------------------------------------
+# Ensure the database schema exists before any test runs. On a fresh checkout
+# (e.g. CI) there is no SQLite file yet, so settings/proposals tests that read
+# the DB via runtime_settings.get_all() would fail with an OperationalError.
+# Creating the tables once per session is idempotent and keeps tests hermetic.
+# ---------------------------------------------------------------------------
+import pytest as _pytest
+from app.db import Base as _Base, engine as _engine
+import app.models  # noqa: F401  (register models on Base)
+
+
+@_pytest.fixture(scope="session", autouse=True)
+def _ensure_db_schema():
+    _Base.metadata.create_all(bind=_engine)
+    yield
