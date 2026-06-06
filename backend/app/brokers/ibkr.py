@@ -28,9 +28,18 @@ _ib_op_lock = threading.RLock()
 
 
 def _ensure_event_loop() -> None:
-    """eventkit/ib_insync expects a current loop; Python 3.14 no longer creates one implicitly."""
+    """Guarantee a current event loop in the calling thread.
+
+    eventkit/ib_insync expect ``asyncio.get_event_loop()`` to return a loop, but
+    FastAPI runs sync endpoints across a pool of worker threads, none of which
+    has a loop, and Python 3.12+ no longer creates one implicitly. Without this,
+    a broker call on a fresh worker thread raises "There is no current event loop
+    in thread 'AnyIO worker thread'" instead of a clean BrokerUnavailable.
+    """
     try:
-        asyncio.get_event_loop_policy().get_event_loop()
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError("event loop is closed")
     except RuntimeError:
         asyncio.set_event_loop(asyncio.new_event_loop())
 
@@ -49,6 +58,7 @@ def _ib_class():
 
 def _connect() -> Any:
     global _ib
+    _ensure_event_loop()
     with _connect_lock:
         if _ib is None:
             _ib = _ib_class()()
