@@ -1,5 +1,11 @@
 # 📈 StockSim — Multi-Signal Stock Trading Simulator
 
+[![CI](https://github.com/blurboy1985/stock-trading/actions/workflows/ci.yml/badge.svg)](https://github.com/blurboy1985/stock-trading/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/blurboy1985/stock-trading?sort=semver)](https://github.com/blurboy1985/stock-trading/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+![Stack](https://img.shields.io/badge/stack-FastAPI%20%2B%20React%2FTS-0aa.svg)
+
 A US-stock **paper-trading simulator** that connects to Interactive Brokers
 (IBKR) through TWS or IB Gateway, ranks the best stocks to buy/sell with a
 transparent multi-signal engine, monitors open positions, and lets you validate
