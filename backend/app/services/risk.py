@@ -109,13 +109,15 @@ def validate_order(
     qty: float,
     price: float,
     atr: float | None = None,
+    cfg: dict[str, Any] | None = None,
 ) -> RiskDecision:
     """Gate a proposed order against current risk limits.
 
     ``atr`` (in price terms), when supplied alongside a configured
     ``atr_stop_mult``, yields a volatility-scaled stop instead of the flat %.
     """
-    cfg = runtime_settings.get_all()
+    if cfg is None:
+        cfg = runtime_settings.get_all()
     equity = float(account.get("equity", 0)) or 1.0
     side = side.lower()
 
@@ -196,7 +198,7 @@ def validate_order(
                 )
 
     stop, target = compute_bracket(
-        price, side, cfg["stop_loss_pct"], cfg["take_profit_pct"],
+        price, side, cfg.get("stop_loss_pct", 0.0), cfg.get("take_profit_pct", 0.0),
         atr=atr, atr_stop_mult=cfg.get("atr_stop_mult", 0.0),
     )
     return RiskDecision(ok=True, qty=qty, stop_loss=stop, take_profit=target)

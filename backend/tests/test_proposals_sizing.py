@@ -44,14 +44,17 @@ def test_cap_core_buy_qty_respects_total_exposure_overlay_budget():
         {"symbol": "OTHER", "qty": 1.0, "market_value": 7_000.0},
     ]  # total invested = 53,000, leaving only 27,000 before the 80% cap.
 
+    cfg = _cfg()
     qty = proposals._cap_buy_qty_for_risk(
-        account, positions, "RSP", qty=330, price=209.565, cfg=_cfg()
+        account, positions, "RSP", qty=330, price=209.565, cfg=cfg
     )
 
     assert qty == 128
-    decision = risk.validate_order(account, positions, "RSP", "buy", qty, 209.565)
+    decision = risk.validate_order(account, positions, "RSP", "buy", qty, 209.565, cfg=cfg)
     assert decision.ok
-    too_many = risk.validate_order(account, positions, "RSP", "buy", qty + 1, 209.565)
+    too_many = risk.validate_order(
+        account, positions, "RSP", "buy", qty + 1, 209.565, cfg=cfg
+    )
     assert not too_many.ok
     assert "total exposure" in too_many.reason
 
@@ -131,4 +134,4 @@ def test_core_buy_becomes_possible_after_rebalance_sells_are_applied():
 
     assert sym == "RSP"
     assert capped_qty > 0
-    assert risk.validate_order(account, positions, sym, "buy", capped_qty, price).ok
+    assert risk.validate_order(account, positions, sym, "buy", capped_qty, price, cfg=cfg).ok
