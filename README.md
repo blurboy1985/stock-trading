@@ -24,6 +24,12 @@ confirmation.
 
 ---
 
+## Screenshots
+
+![StockSim backtest — equity curve vs. buy & hold, risk-adjusted metrics, and per-signal P&L attribution](docs/screenshot.png)
+
+---
+
 ## Architecture
 
 ```
