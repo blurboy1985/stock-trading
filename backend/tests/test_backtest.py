@@ -114,3 +114,42 @@ def test_flat_market_finds_no_edge():
     # meaningful P&L either way (the strategy must not invent an edge).
     assert res["metrics"]["num_trades"] <= 8
     assert abs(res["metrics"]["total_return"]) < 0.03
+
+
+def test_core_allocation_keeps_cash_in_benchmark_in_uptrend():
+    # The bot's pure timing mode can sit mostly in cash. A core allocation should
+    # keep most capital invested in the benchmark ETF, so a simple uptrend earns
+    # materially more than a defensive no-core run.
+    bars = _make_bars(np.linspace(100, 160, 220))
+
+    no_core = run_backtest(
+        {"RSP": bars},
+        BacktestConfig(warmup=50, use_vol_sizing=True, target_risk_pct=0.0025, max_position_pct=0.1),
+    )
+    with_core = run_backtest(
+        {"RSP": bars},
+        BacktestConfig(
+            warmup=50,
+            use_vol_sizing=True,
+            target_risk_pct=0.0025,
+            max_position_pct=0.1,
+            core_symbol="RSP",
+            core_target_pct=0.8,
+        ),
+    )
+
+    assert with_core["metrics"]["total_return"] > no_core["metrics"]["total_return"] + 0.20
+    assert any(t["driver"] == "core" for t in with_core["trades"])
+
+
+def test_core_symbol_is_not_signal_traded_on_top_of_core_position():
+    bars = _make_bars(np.linspace(100, 160, 220))
+
+    res = run_backtest(
+        {"RSP": bars},
+        BacktestConfig(warmup=50, core_symbol="RSP", core_target_pct=0.8),
+    )
+
+    # The core leg should be the only RSP driver; otherwise the active timing model
+    # is double-counting the same ETF on top of the benchmark allocation.
+    assert {t["driver"] for t in res["trades"]} == {"core"}

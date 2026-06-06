@@ -58,7 +58,7 @@ DEFAULTS: dict[str, Any] = {
     # (gap risk). 0 disables. Live-only — no point-in-time data for backtests.
     "earnings_blackout_days": 5,
     # ── Sentiment / fundamentals tuning ───────────────────────────────
-    "sentiment_backend": "lexicon",      # "lexicon" (VADER+LM) or "llm" (Claude)
+    "sentiment_backend": "lexicon",      # "lexicon" (VADER+LM) or "llm" (ChatGPT/OpenAI)
     "sentiment_halflife_days": 3.0,      # recency decay half-life for headlines
     "sentiment_lm_weight": 0.5,          # blend: Loughran-McDonald vs VADER
     "fundamentals_sector_relative": True,  # value vs sector median (live universe)
@@ -69,12 +69,19 @@ DEFAULTS: dict[str, Any] = {
     "context_signal_mode": "filter",
     "context_veto_threshold": 0.4,  # |score| below -this vetoes a BUY (filter mode)
     # ── News sources (sentiment ingest) ───────────────────────────────
-    # Which feeds power the sentiment signal. "alpaca" (Benzinga) is the
-    # default batched feed; extra sources are fetched per-symbol and merged
-    # with event-level de-dup so duplicate coverage can't bias the score.
-    "news_sources": ["alpaca"],          # subset of news_sources.ALL_SOURCES
+    # Which feeds power the sentiment signal. Yahoo Finance is the default
+    # no-key feed; extra sources are fetched per-symbol and merged with
+    # event-level de-dup so duplicate coverage can't bias the score.
+    "news_sources": ["yfinance"],        # subset of news_sources.ALL_SOURCES
     "news_scope": "watchlist",           # "watchlist" | "universe" for extra sources
     "news_per_source_limit": 15,         # headlines fetched per extra source/symbol
+    # ── Benchmark core / cash-sweep overlay ────────────────────────────
+    # When enabled (>0), auto-trade keeps this pct of equity in a broad ETF such
+    # as RSP. Active stock proposals then operate as an overlay instead of letting
+    # unused cash sit idle during risk-on markets.
+    "core_symbol": "RSP",
+    "core_target_pct": 0.0,
+    "core_rebalance_threshold_pct": 0.02,
 }
 
 

@@ -1,19 +1,41 @@
 import type { ReactNode } from "react";
 
-export const fmtUsd = (n: number | null | undefined) =>
-  n == null ? "—" : n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+type Numeric = number | string | null | undefined;
 
-export const fmtPct = (n: number | null | undefined, digits = 2) =>
-  n == null ? "—" : `${(n * 100).toFixed(digits)}%`;
+const finiteNumber = (n: Numeric): number | null => {
+  if (n == null || n === "") return null;
+  const value = typeof n === "number" ? n : Number(n);
+  return Number.isFinite(value) ? value : null;
+};
 
-export const fmtNum = (n: number | null | undefined, digits = 2) =>
-  n == null ? "—" : n.toFixed(digits);
+export const fmtUsd = (n: Numeric) => {
+  const value = finiteNumber(n);
+  return value == null
+    ? "—"
+    : value.toLocaleString("en-US", { style: "currency", currency: "USD" });
+};
 
-export const fmtSignedUsd = (n: number | null | undefined) =>
-  n == null ? "—" : `${n >= 0 ? "+" : "-"}${fmtUsd(Math.abs(n))}`;
+export const fmtPct = (n: Numeric, digits = 2) => {
+  const value = finiteNumber(n);
+  return value == null ? "—" : `${(value * 100).toFixed(digits)}%`;
+};
 
-export const fmtSignedPct = (n: number | null | undefined, digits = 2) =>
-  n == null ? "—" : `${n >= 0 ? "+" : "-"}${(Math.abs(n) * 100).toFixed(digits)}%`;
+export const fmtNum = (n: Numeric, digits = 2) => {
+  const value = finiteNumber(n);
+  return value == null ? "—" : value.toFixed(digits);
+};
+
+export const fmtSignedUsd = (n: Numeric) => {
+  const value = finiteNumber(n);
+  return value == null ? "—" : `${value >= 0 ? "+" : "-"}${fmtUsd(Math.abs(value))}`;
+};
+
+export const fmtSignedPct = (n: Numeric, digits = 2) => {
+  const value = finiteNumber(n);
+  return value == null
+    ? "—"
+    : `${value >= 0 ? "+" : "-"}${(Math.abs(value) * 100).toFixed(digits)}%`;
+};
 
 export function Panel({
   title,

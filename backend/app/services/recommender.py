@@ -13,7 +13,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from .. import alpaca_client as ac
+from .. import broker_client as ac
 from ..config import settings
 from ..db import SessionLocal
 from ..models import Recommendation, WatchlistItem
@@ -32,7 +32,7 @@ _ATR_FLOOR = 0.005
 def get_universe() -> list[str]:
     """The user's watchlist from the DB, falling back to the env default.
 
-    This is the *watchlist* (used for the Alpaca sync and Settings views), not
+    This is the *watchlist* (used for broker sync and Settings views), not
     necessarily the full set of symbols scored each cycle — see
     :func:`build_universe`.
     """
@@ -108,14 +108,14 @@ def generate(persist: bool = True) -> dict[str, Any]:
     if not settings.has_credentials:
         return {
             "configured": False,
-            "message": "Alpaca credentials not set — add them in backend/.env.",
+            "message": "IBKR is not configured — set IBKR_HOST, IBKR_PORT and IBKR_CLIENT_ID in backend/.env, then start TWS/Gateway.",
             "recommendations": [],
         }
 
     cfg = runtime_settings.get_all()
     weights = cfg["weights"]
     universe, watchlist_set = build_universe(cfg)
-    # Alpaca/Benzinga in one batched call, then merge any opt-in extra sources
+    # Broker/news fallback in one batched call, then merge any opt-in extra sources
     # (Yahoo/Finnhub/Marketaux/NewsAPI) per-symbol with event-level de-dup so
     # duplicate coverage can't bias the sentiment signal.
     news = news_sources.build_symbol_news(
@@ -127,14 +127,25 @@ def generate(persist: bool = True) -> dict[str, Any]:
     start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=500)
 
     # With the LLM sentiment backend, score every distinct headline in one
-    # Claude call up front. The per-symbol scoring below then hits the cache
+    # ChatGPT call up front. The per-symbol scoring below then hits the cache
     # instead of firing a separate ~5s CLI call per symbol (which turned a
     # refresh into a multi-minute hang).
     if cfg["sentiment_backend"] == "llm":
         from ..strategies import sentiment_llm
 
         all_items = [item for items in news.values() for item in items]
-        sentiment_llm.prewarm(all_items)
+        # The LLM path is best-effort context, not a reason to stall a market-hour
+        # refresh. For broad universes, a single giant prompt often times out and
+        # then the old per-symbol fallback would launch dozens of Hermes calls.
+        # Prewarm only modest batches; the per-symbol scorer below uses cached
+        # LLM scores when present and otherwise falls back to the local lexicon.
+        distinct: dict[str, dict[str, Any]] = {}
+        for item in all_items:
+            text = f"{item.get('headline', '')}. {item.get('summary', '')}".strip()
+            if text:
+                distinct.setdefault(text, item)
+        if len(distinct) <= 60:
+            sentiment_llm.prewarm(list(distinct.values()))
 
     # 1) Batch-fetch bars in a single request (needed up front for breadth +
     #    cross-sectional momentum). Batching keeps a large-universe scan fast.
@@ -201,6 +212,7 @@ def generate(persist: bool = True) -> dict[str, Any]:
                 sentiment_backend=cfg["sentiment_backend"],
                 sentiment_halflife_days=cfg["sentiment_halflife_days"],
                 sentiment_lm_weight=cfg["sentiment_lm_weight"],
+                sentiment_llm_query_missing=False,
                 sector_baseline=sector_baseline,
                 info=info,
                 earnings_blackout_days=cfg["earnings_blackout_days"],
@@ -212,6 +224,18 @@ def generate(persist: bool = True) -> dict[str, Any]:
             results.append(decision)
         except Exception as e:  # noqa: BLE001
             errors[sym] = f"{type(e).__name__}: {e}"
+
+    message: str | None = None
+    if not bars_by_symbol:
+        message = (
+            "Refresh completed, but no historical market data was available. "
+            "Check your network/data-source access and that IBKR/TWS is running if Yahoo fallback is unavailable."
+        )
+    elif not results:
+        message = (
+            "Refresh completed, but every symbol failed scoring. "
+            "Open the backend logs for the per-symbol errors."
+        )
 
     # 5) Rank by risk-adjusted score: conviction-weighted, volatility-penalized.
     results.sort(key=lambda d: d.get("rank_score", d["score"]), reverse=True)
@@ -250,6 +274,7 @@ def generate(persist: bool = True) -> dict[str, Any]:
         "top_buys": buys[:5],
         "top_sells": sells[:5],
         "errors": errors,
+        "message": message,
     }
 
 

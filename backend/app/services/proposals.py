@@ -1,10 +1,11 @@
 """Auto-trade proposals: propose → confirm → execute, with a full audit trail.
 
-When ``auto_trade`` is enabled the scheduler *proposes* trades each cycle instead
-of placing them. Each proposal records what we'd do, the sized quantity, an
-estimated cost, and a human-readable rationale, plus a dry-run risk check. The
-user confirms or rejects; only an explicit confirm reaches the broker (always
-paper — see ``portfolio.place_order`` / ``portfolio._live_gate``).
+When ``auto_trade`` is enabled the scheduler creates auditable proposal rows each
+cycle and immediately executes confirmable ones through the same paper-only order
+path. Manual confirm/reject endpoints still exist for review workflows and for
+any proposal left pending by an execution/risk issue. Live orders remain blocked
+by ``portfolio.place_order`` / ``portfolio._live_gate`` unless live mode is
+explicitly enabled elsewhere.
 """
 from __future__ import annotations
 
@@ -13,10 +14,10 @@ from typing import Any
 
 from sqlalchemy import select
 
-from .. import alpaca_client as ac
+from .. import broker_client as ac
 from ..config import settings
 from ..db import SessionLocal
-from ..models import TradeProposal
+from ..models import Recommendation, TradeProposal
 from . import portfolio, risk, runtime_settings
 
 
@@ -36,11 +37,12 @@ def _utcnow() -> dt.datetime:
 
 
 def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
-    """Propose (don't place) entries/exits for the latest recommendations.
+    """Create auditable entry/exit rows for the latest recommendations.
 
     Mirrors the old auto-trader's selection logic: buy top-ranked BUYs we don't
-    hold, sell holdings that flipped to SELL — but persists each as a *pending*
-    proposal awaiting human confirmation.
+    hold, sell holdings that flipped to SELL. The scheduler normally follows this
+    with :func:`confirm_all` so eligible rows are auto-executed; standalone callers
+    can still review/confirm manually.
     """
     snap = portfolio.snapshot()
     if not snap["configured"]:
@@ -73,6 +75,13 @@ def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
             ).all()
         }
 
+        # Work against a virtual copy of positions while building a batch. A
+        # single cycle can propose several buys before any of them fills, so
+        # sizing each candidate against only the starting portfolio creates
+        # doomed rows that later fail the same risk checks during confirmation.
+        planned_positions = [dict(p) for p in positions]
+        proposed_orders: set[tuple[str, str]] = set()
+
         # Exits: any held symbol now rated SELL.
         sell_syms = {d["symbol"] for d in reco.get("recommendations", []) if d["action"] == "SELL"}
         for sym, p in held.items():
@@ -86,24 +95,67 @@ def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
                 continue
             created.append(
                 _make(db, "sell", sym, float(p["qty"]), price, d, cfg,
-                      account, positions, equity, regime)
+                      account, planned_positions, equity, regime)
             )
+            proposed_orders.add((sym, "sell"))
+            _apply_virtual_sell(planned_positions, sym)
+
+        # If the benchmark core is underweight but the portfolio is already too
+        # invested to buy it up to target, sell the weakest non-core holdings
+        # first. The scheduler confirms rows in insertion order, so these exits
+        # free cash/risk budget before the core buy row below is attempted.
+        for sym, qty, price, d in _core_rebalance_sell_candidates(
+            cfg, planned_positions, equity, reco_by_sym
+        ):
+            key = (sym, "sell")
+            if key in pending or key in open_orders or key in proposed_orders:
+                continue
+            created.append(
+                _make(db, "sell", sym, qty, price, d, cfg,
+                      account, planned_positions, equity, regime)
+            )
+            proposed_orders.add(key)
+            _apply_virtual_sell(planned_positions, sym)
+
+        # Benchmark core / cash sweep: keep idle capital invested in a broad ETF
+        # (usually RSP) before the active stock overlay. This is buy-only here:
+        # we do not tactically exit the core just because no active signal fires.
+        core = _core_buy_candidate(cfg, account, planned_positions, equity, reco_by_sym, regime)
+        if core is not None:
+            sym, qty, price, d = core
+            if (sym, "buy") not in pending and (sym, "buy") not in open_orders:
+                qty = _cap_buy_qty_for_risk(account, planned_positions, sym, qty, price, cfg)
+                if qty > 0:
+                    created.append(
+                        _make(
+                            db, "buy", sym, qty, price, d, cfg,
+                            account, planned_positions, equity, regime,
+                        )
+                    )
+                    _apply_virtual_buy(planned_positions, sym, qty, price)
 
         # Entries: top BUYs we don't already hold.
+        core_symbol = str(cfg.get("core_symbol") or "").upper() if cfg.get("core_target_pct") else ""
         for d in reco.get("top_buys", []):
             sym = d["symbol"]
-            if sym in held or (sym, "buy") in pending or (sym, "buy") in open_orders:
+            if core_symbol and sym == core_symbol:
+                continue
+            if any(str(p.get("symbol", "")).upper() == sym for p in planned_positions):
+                continue
+            if (sym, "buy") in pending or (sym, "buy") in open_orders:
                 continue
             price = float(d.get("price") or 0.0)
             if price <= 0:
                 continue
             qty = _entry_qty(d, cfg, equity, price)
+            qty = _cap_buy_qty_for_risk(account, planned_positions, sym, qty, price, cfg)
             if qty <= 0:
                 continue
             created.append(
                 _make(db, "buy", sym, qty, price, d, cfg,
-                      account, positions, equity, regime)
+                      account, planned_positions, equity, regime)
             )
+            _apply_virtual_buy(planned_positions, sym, qty, price)
 
         db.commit()
         return [_serialize(r) for r in created]
@@ -130,6 +182,236 @@ def _entry_qty(d: dict[str, Any], cfg: dict[str, Any], equity: float, price: flo
     return float(risk.size_position(equity, price, cfg["max_position_pct"]))
 
 
+def _cap_buy_qty_for_risk(
+    account: dict[str, Any],
+    positions: list[dict[str, Any]],
+    symbol: str,
+    qty: float,
+    price: float,
+    cfg: dict[str, Any],
+) -> int:
+    """Reduce a BUY quantity so the proposal is actually confirmable.
+
+    Recommendation sizing is intentionally signal-driven, but confirmation goes
+    through hard portfolio risk gates. This helper keeps the audit trail clean by
+    clipping proposed quantities to the remaining per-symbol, total-exposure, and
+    buying-power budgets, including buys already planned in this same cycle.
+    """
+    if qty <= 0 or price <= 0:
+        return 0
+    equity = float(account.get("equity") or 0.0)
+    if equity <= 0:
+        return 0
+
+    buying_power_budget = max(0.0, float(account.get("buying_power") or 0.0))
+    invested = sum(float(p.get("market_value") or 0.0) for p in positions)
+    total_budget = max(0.0, equity * float(cfg["max_total_exposure_pct"]) - invested)
+
+    existing = next(
+        (p for p in positions if str(p.get("symbol", "")).upper() == symbol.upper()),
+        None,
+    )
+    existing_val = float(existing.get("market_value") or 0.0) if existing else 0.0
+    position_limit = float(cfg["max_position_pct"])
+    core_symbol = str(cfg.get("core_symbol") or "").upper()
+    core_target = float(cfg.get("core_target_pct") or 0.0)
+    if core_target > 0 and symbol.upper() == core_symbol:
+        position_limit = max(
+            position_limit,
+            core_target + float(cfg.get("core_rebalance_threshold_pct") or 0.0),
+        )
+    position_budget = max(0.0, equity * position_limit - existing_val)
+
+    budget = min(float(qty) * price, buying_power_budget, total_budget, position_budget)
+    if budget <= 0:
+        return 0
+    return int(budget // price)
+
+
+def _apply_virtual_buy(
+    positions: list[dict[str, Any]], symbol: str, qty: float, price: float
+) -> None:
+    """Reflect an in-cycle planned buy in the virtual positions list."""
+    sym = symbol.upper()
+    value = float(qty) * float(price)
+    existing = next(
+        (p for p in positions if str(p.get("symbol", "")).upper() == sym),
+        None,
+    )
+    if existing is None:
+        positions.append({"symbol": sym, "qty": float(qty), "market_value": value})
+        return
+    existing["qty"] = float(existing.get("qty") or 0.0) + float(qty)
+    existing["market_value"] = float(existing.get("market_value") or 0.0) + value
+
+
+def _apply_virtual_sell(positions: list[dict[str, Any]], symbol: str) -> None:
+    """Remove a full-position sell from the in-cycle virtual portfolio."""
+    sym = symbol.upper()
+    positions[:] = [
+        p for p in positions if str(p.get("symbol", "")).upper() != sym
+    ]
+
+
+def _position_price(p: dict[str, Any]) -> float:
+    price = float(p.get("current_price") or p.get("price") or 0.0)
+    if price > 0:
+        return price
+    qty = float(p.get("qty") or 0.0)
+    value = float(p.get("market_value") or 0.0)
+    return (value / qty) if qty > 0 and value > 0 else 0.0
+
+
+def _core_rebalance_sell_candidates(
+    cfg: dict[str, Any],
+    positions: list[dict[str, Any]],
+    equity: float,
+    reco_by_sym: dict[str, dict[str, Any]],
+) -> list[tuple[str, float, float, dict[str, Any]]]:
+    """Full-position exits needed to make room for an underweight core ETF.
+
+    The core buy helper can sweep idle cash into RSP, but when the active overlay
+    already consumes too much exposure, buying the gap would violate the total
+    exposure cap. In that case, sell lowest-ranked non-core holdings until a
+    later core buy can move toward target while staying under the cap. Sells are
+    full-position because execution uses ``close_position`` to cancel bracket
+    legs safely before flattening the broker position.
+    """
+    target_pct = float(cfg.get("core_target_pct") or 0.0)
+    if target_pct <= 0 or equity <= 0:
+        return []
+    max_total = float(cfg.get("max_total_exposure_pct") or 1.0)
+    core_symbol = str(cfg.get("core_symbol") or "RSP").upper()
+    threshold = float(cfg.get("core_rebalance_threshold_pct") or 0.02)
+
+    invested = sum(float(p.get("market_value") or 0.0) for p in positions)
+    held_core = next(
+        (p for p in positions if str(p.get("symbol", "")).upper() == core_symbol),
+        None,
+    )
+    current_core = float(held_core.get("market_value") or 0.0) if held_core else 0.0
+    target_value = equity * min(1.0, max(0.0, target_pct))
+    core_gap = max(0.0, target_value - current_core)
+    if core_gap / equity < threshold:
+        return []
+
+    # If the core gap can be bought inside the total exposure cap, no rebalance
+    # sells are needed; the normal core cash-sweep proposal can handle it.
+    sell_needed = invested + core_gap - (equity * max_total)
+    if sell_needed <= 0:
+        return []
+
+    candidates: list[tuple[float, float, str, float, float, dict[str, Any]]] = []
+    for p in positions:
+        sym = str(p.get("symbol", "")).upper()
+        if not sym or sym == core_symbol:
+            continue
+        qty = float(p.get("qty") or 0.0)
+        value = float(p.get("market_value") or 0.0)
+        price = _position_price(p)
+        if qty <= 0 or value <= 0 or price <= 0:
+            continue
+        d = dict(reco_by_sym.get(sym) or {})
+        rank = float(d.get("rank_score", d.get("score", 0.0)) or 0.0)
+        candidates.append((rank, -value, sym, qty, price, d))
+
+    out: list[tuple[str, float, float, dict[str, Any]]] = []
+    freed = 0.0
+    for _rank, _neg_value, sym, qty, price, d in sorted(candidates):
+        value = qty * price
+        reasons = [
+            f"core rebalance: free capacity for {core_symbol} toward {target_pct:.0%} target",
+            f"selling non-core holding so total exposure can stay below {max_total:.0%}",
+        ]
+        if d.get("reasons"):
+            reasons.extend(list(d["reasons"])[:3])
+        d.update(
+            {
+                "symbol": sym,
+                "action": "SELL",
+                "price": price,
+                "reasons": reasons,
+                "breakdown": d.get("breakdown") or {
+                    "core_rebalance": {
+                        "score": -1.0,
+                        "weight": 1.0,
+                        "reasons": reasons[:2],
+                        "metrics": {
+                            "core_symbol": core_symbol,
+                            "core_target_pct": target_pct,
+                            "current_core_pct": current_core / equity,
+                            "sell_needed": sell_needed,
+                        },
+                    }
+                },
+            }
+        )
+        out.append((sym, qty, price, d))
+        freed += value
+        if freed >= sell_needed:
+            break
+    return out
+
+
+def _core_buy_candidate(
+    cfg: dict[str, Any],
+    account: dict[str, Any],
+    positions: list[dict[str, Any]],
+    equity: float,
+    reco_by_sym: dict[str, dict[str, Any]],
+    regime: str | None,
+) -> tuple[str, int, float, dict[str, Any]] | None:
+    """Return a buy proposal that sweeps idle cash into the benchmark core."""
+    target_pct = float(cfg.get("core_target_pct") or 0.0)
+    if target_pct <= 0 or equity <= 0:
+        return None
+    if regime and regime.lower() in {"risk_off", "bear"}:
+        return None
+    sym = str(cfg.get("core_symbol") or "RSP").upper()
+    threshold = float(cfg.get("core_rebalance_threshold_pct") or 0.02)
+    held = next((p for p in positions if p["symbol"] == sym), None)
+    current_value = float(held.get("market_value") or 0.0) if held else 0.0
+    target_value = equity * min(1.0, max(0.0, target_pct))
+    gap = target_value - current_value
+    if gap / equity < threshold:
+        return None
+    price = float((reco_by_sym.get(sym) or {}).get("price") or 0.0)
+    if price <= 0:
+        try:
+            price = float(ac.get_latest_quote(sym).get("mid") or 0.0)
+        except Exception:  # noqa: BLE001 — no quote, no core proposal this cycle
+            price = 0.0
+    if price <= 0:
+        return None
+    budget = min(gap, float(account.get("buying_power") or 0.0))
+    qty = int(budget // price)
+    if qty <= 0:
+        return None
+    d = dict(reco_by_sym.get(sym) or {})
+    d.update(
+        {
+            "symbol": sym,
+            "action": "BUY",
+            "price": price,
+            "conviction": d.get("conviction", 1.0),
+            "atr_pct": d.get("atr_pct"),
+            "reasons": [
+                f"benchmark core cash sweep toward {target_pct:.0%} target",
+                "keeps idle cash invested while active stock signals run as overlay",
+            ],
+            "breakdown": d.get("breakdown") or {
+                "core": {
+                    "score": 1.0,
+                    "weight": 1.0,
+                    "reasons": ["benchmark core allocation"],
+                    "metrics": {"target_pct": target_pct, "current_pct": current_value / equity},
+                }
+            },
+        }
+    )
+    return sym, qty, price, d
+
+
 def _make(
     db: Any, side: str, symbol: str, qty: float, price: float,
     d: dict[str, Any], cfg: dict[str, Any], account: dict[str, Any],
@@ -140,6 +422,7 @@ def _make(
     conviction = d.get("conviction")
     atr_pct = d.get("atr_pct")
     reasons = d.get("reasons") or []
+    breakdown = d.get("breakdown") or {}
 
     # Dry-run the same risk gate confirm/place_order will enforce, so the user
     # sees up front whether (and why) a trade can't go through. Pass ATR (in
@@ -161,6 +444,7 @@ def _make(
         atr_pct=atr_pct,
         rationale=_explain(side, symbol, qty, est_cost, equity_pct, conviction, atr_pct, reasons, cfg, regime),
         reasons_json=list(reasons),
+        breakdown_json=breakdown,
         regime=regime,
         blocked_reason=blocked,
         status="pending",
@@ -181,6 +465,13 @@ def _explain(
     sig = " · ".join(reasons[:4]) if reasons else "ranked by risk-adjusted score"
     reg = f" Regime: {regime}." if regime else ""
     if side == "sell":
+        if reasons and str(reasons[0]).startswith("core rebalance"):
+            return (
+                f"SELL {qty_s} {symbol} ({cost}) — core rebalance exit to free "
+                f"capacity for {cfg.get('core_symbol', 'RSP')} toward the "
+                f"{float(cfg.get('core_target_pct') or 0) * 100:.0f}% target.{reg} "
+                f"Signals: {sig}."
+            )
         return (
             f"SELL {qty_s} {symbol} ({cost}) — rating flipped to SELL; exiting "
             f"the position.{reg} Signals: {sig}."
@@ -204,7 +495,7 @@ def list_proposals(status: str | None = None) -> list[dict[str, Any]]:
         q = select(TradeProposal).order_by(TradeProposal.created_at.desc())
         if status:
             q = q.where(TradeProposal.status == status)
-        return [_serialize(r) for r in db.scalars(q.limit(200)).all()]
+        return [_serialize(r, db) for r in db.scalars(q.limit(200)).all()]
 
 
 def confirm(proposal_id: int) -> dict[str, Any]:
@@ -286,7 +577,7 @@ def _execute(db: Any, row: TradeProposal) -> dict[str, Any]:
             # (OCO stop/target) legs first. A plain market sell would leave those
             # legs working — one could later fire a second sell and open a short
             # at the broker, which validate_order can't prevent (the leg lives at
-            # Alpaca). Proposals always exit the full held qty, so a full close
+            # broker). Proposals always exit the full held qty, so a full close
             # is equivalent.
             res = portfolio.close_position(row.symbol, source="auto")
         else:
@@ -298,12 +589,26 @@ def _execute(db: Any, row: TradeProposal) -> dict[str, Any]:
         return {"ok": False, "error": str(e)}
     order = res.get("order") or {}
     row.status = "executed"
-    row.result = order.get("alpaca_order_id") or order.get("id") or "submitted"
+    row.result = order.get("broker_order_id") or order.get("alpaca_order_id") or order.get("id") or "submitted"
     row.decided_at = _utcnow()
     return {"ok": True, "order": order}
 
 
-def _serialize(r: TradeProposal) -> dict[str, Any]:
+def _serialize(r: TradeProposal, db: Any | None = None) -> dict[str, Any]:
+    breakdown = r.breakdown_json or {}
+    if not breakdown and db is not None:
+        # Backfill older proposal history from the persisted recommendation row.
+        # New proposals store breakdown_json directly, but existing history was
+        # created before that column existed. Prefer the recommendation snapshot
+        # closest to, but not after, the proposal creation time.
+        reco = db.scalars(
+            select(Recommendation)
+            .where(Recommendation.symbol == r.symbol)
+            .where(Recommendation.created_at <= r.created_at)
+            .order_by(Recommendation.created_at.desc())
+            .limit(1)
+        ).first()
+        breakdown = reco.breakdown if reco and reco.breakdown else {}
     return {
         "id": r.id,
         "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -318,6 +623,7 @@ def _serialize(r: TradeProposal) -> dict[str, Any]:
         "atr_pct": r.atr_pct,
         "rationale": r.rationale,
         "reasons": r.reasons_json or [],
+        "breakdown": breakdown,
         "regime": r.regime,
         "blocked_reason": r.blocked_reason,
         "status": r.status,

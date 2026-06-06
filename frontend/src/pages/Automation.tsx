@@ -11,6 +11,13 @@ function qtyLabel(p: Proposal) {
   return Number.isInteger(p.qty) ? `${p.qty}` : p.qty.toFixed(2);
 }
 
+function statusClass(status: Proposal["status"]) {
+  if (status === "executed") return "border-buy/40 text-buy bg-buy/10";
+  if (status === "failed") return "border-sell/40 text-sell bg-sell/10";
+  if (status === "pending") return "border-accent/40 text-accent bg-accent/10";
+  return "border-edge text-slate-400 bg-panel2";
+}
+
 export function Automation() {
   const qc = useQueryClient();
   const [banners, setBanners] = useState<Banner[]>([]);
@@ -18,8 +25,8 @@ export function Automation() {
     setBanners((b) => [{ kind, text }, ...b].slice(0, 6));
 
   const proposals = useQuery({
-    queryKey: ["proposals"],
-    queryFn: () => api.proposals("pending"),
+    queryKey: ["proposals", "all"],
+    queryFn: () => api.proposals(""),
     refetchInterval: 15_000,
   });
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
@@ -33,7 +40,7 @@ export function Automation() {
   const confirm = useMutation({
     mutationFn: (p: Proposal) => api.confirmProposal(p.id),
     onSuccess: (data, p) => {
-      const oid = data.proposal.result ?? data.order?.alpaca_order_id ?? "";
+      const oid = data.proposal.result ?? data.order?.broker_order_id ?? data.order?.alpaca_order_id ?? "";
       pushBanner(
         "ok",
         `✓ Placed ${p.side.toUpperCase()} ${qtyLabel(p)} ${p.symbol}${oid ? ` (order ${oid})` : ""}`,
@@ -69,7 +76,8 @@ export function Automation() {
   if (proposals.isLoading) return <Spinner label="Loading proposals…" />;
 
   const list = proposals.data?.proposals ?? [];
-  const confirmable = list.filter((p) => !p.blocked_reason);
+  const pending = list.filter((p) => p.status === "pending");
+  const confirmable = pending.filter((p) => !p.blocked_reason);
   const autoOn = settings.data?.settings.auto_trade ?? false;
   const busy = confirm.isPending || reject.isPending || confirmAll.isPending;
 
@@ -78,8 +86,9 @@ export function Automation() {
       <SectionGuide id="automation" />
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="text-sm text-slate-400 max-w-2xl">
-          Auto-propose scans the market every 15 min during market hours and drafts trades
-          from the latest signals. <span className="text-slate-300">Nothing is placed until you confirm.</span>
+          Auto-trade scans the market every 15 min during market hours, records each
+          proposal for audit, then auto-executes confirmable paper trades. This page now
+          shows the full proposal history and signal breakdown.
         </div>
         <button
           onClick={() => confirmAll.mutate()}
@@ -106,7 +115,7 @@ export function Automation() {
       {list.length === 0 && (
         <Panel>
           <p className="text-slate-400 text-sm py-6 text-center">
-            No pending proposals. Auto-propose is{" "}
+            No proposal history yet. Auto-trade is{" "}
             <span className={autoOn ? "text-buy" : "text-sell"}>{autoOn ? "ON" : "OFF"}</span>.
             {!autoOn && (
               <>
@@ -173,28 +182,66 @@ function ProposalCard({
             )}
             <span className="text-slate-500"> · @ {fmtUsd(p.price)}</span>
           </div>
+          <div className="flex flex-wrap gap-2 mt-1 text-[11px]">
+            <span className={`px-2 py-0.5 rounded border ${statusClass(p.status)}`}>
+              {p.status.toUpperCase()}{p.result ? ` · ${p.result}` : ""}
+            </span>
+            {p.created_at && <span className="text-slate-500">Proposed {new Date(p.created_at).toLocaleString()}</span>}
+            {p.decided_at && <span className="text-slate-500">Decided {new Date(p.decided_at).toLocaleString()}</span>}
+          </div>
           <p className="text-xs text-slate-400 mt-1">{p.rationale}</p>
           {blocked && (
             <p className="text-xs text-sell mt-1">⚠ Can't place: {p.blocked_reason}</p>
           )}
+          <details className="mt-2 text-xs text-slate-400">
+            <summary className="cursor-pointer hover:text-slate-200">Why this stock was chosen</summary>
+            <div className="mt-2 space-y-2">
+              {p.reasons.length > 0 && (
+                <ul className="list-disc pl-5 space-y-1">
+                  {p.reasons.map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
+              )}
+              {Object.keys(p.breakdown ?? {}).length > 0 ? (
+                <div className="grid md:grid-cols-2 gap-2">
+                  {Object.entries(p.breakdown ?? {}).map(([name, b]) => (
+                    <div key={name} className="rounded-lg border border-edge bg-panel2 p-2">
+                      <div className="flex justify-between gap-2 text-slate-300">
+                        <span className="capitalize font-semibold">{name}</span>
+                        <span>score {typeof b.score === "number" ? b.score.toFixed(2) : b.score} · weight {fmtPct(b.weight ?? 0, 0)}</span>
+                      </div>
+                      {b.reasons?.length > 0 && (
+                        <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                          {b.reasons.map((r, i) => <li key={i}>{r}</li>)}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-slate-500">Older proposal: detailed per-signal breakdown was not stored yet.</p>
+              )}
+            </div>
+          </details>
         </div>
-        <div className="flex gap-2 shrink-0">
-          <button
-            onClick={onConfirm}
-            disabled={busy || blocked}
-            title={blocked ? p.blocked_reason ?? "" : `Confirm ${p.side} ${p.symbol} (paper)`}
-            className="bg-buy/20 border border-buy/40 text-buy text-xs px-3 py-1.5 rounded-lg hover:bg-buy/30 disabled:opacity-30"
-          >
-            {confirming ? "…" : "Confirm"}
-          </button>
-          <button
-            onClick={onReject}
-            disabled={busy}
-            className="bg-panel2 border border-edge text-slate-300 text-xs px-3 py-1.5 rounded-lg hover:bg-edge disabled:opacity-40"
-          >
-            {rejecting ? "…" : "Reject"}
-          </button>
-        </div>
+        {p.status === "pending" && (
+          <div className="flex gap-2 shrink-0">
+            <button
+              onClick={onConfirm}
+              disabled={busy || blocked}
+              title={blocked ? p.blocked_reason ?? "" : `Confirm ${p.side} ${p.symbol} (paper)`}
+              className="bg-buy/20 border border-buy/40 text-buy text-xs px-3 py-1.5 rounded-lg hover:bg-buy/30 disabled:opacity-30"
+            >
+              {confirming ? "…" : "Confirm"}
+            </button>
+            <button
+              onClick={onReject}
+              disabled={busy}
+              className="bg-panel2 border border-edge text-slate-300 text-xs px-3 py-1.5 rounded-lg hover:bg-edge disabled:opacity-40"
+            >
+              {rejecting ? "…" : "Reject"}
+            </button>
+          </div>
+        )}
       </div>
     </Panel>
   );

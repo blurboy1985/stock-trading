@@ -33,8 +33,8 @@ const GUIDES: Record<string, Guide> = {
     what: (
       <>
         Your live account command center. Everything here is read in real time
-        from your Alpaca paper account — the same balances, positions and orders
-        you'd see on alpaca.markets — and refreshes on its own every few seconds.
+        from your IBKR paper session via TWS/Gateway — balances, positions and orders
+        refresh on their own every few seconds.
       </>
     ),
     how: [
@@ -68,19 +68,19 @@ const GUIDES: Record<string, Guide> = {
     title: "Automation",
     what: (
       <>
-        Hands-off idea generation with a human gate. When auto-propose is on,
+        Hands-off paper auto-trading with an audit trail. When auto-trade is on,
         StockSim scans the market every 15 minutes during market hours and drafts
-        trades from the latest signals. Nothing is ever placed until you confirm
-        it.
+        trades from the latest signals, then auto-executes confirmable proposals
+        through the same paper-safe order path.
       </>
     ),
     how: [
-      <>Each card shows the proposed {b("side, share count, estimated cost, % of equity")} and a one-line rationale.</>,
-      <>{b("Confirm")} places that paper order; {b("Reject")} dismisses it; {b("Confirm all")} clears the whole queue at once.</>,
+      <>Each card shows proposal status/history, {b("side, share count, estimated cost, % of equity")}, rationale, and an expandable signal breakdown.</>,
+      <>Confirm/Reject controls appear only for proposals that are still pending; executed auto-trades remain visible as history.</>,
       <>A proposal marked {b("⚠ Can't place")} failed a risk check (e.g. exposure or sector cap) and can't be confirmed — that's the guardrail doing its job.</>,
-      <>The number badge on the Automation tab in the top nav counts proposals waiting on you.</>,
+      <>The number badge on the Automation tab in the top nav counts proposals still waiting on manual action.</>,
     ],
-    tip: <>Turn auto-propose on or off in {b("Settings → Automation")}. Like everything else, it's paper-only.</>,
+    tip: <>Turn auto-trade on or off in {b("Settings → Automation")}. Like everything else, it's paper-only.</>,
   },
   research: {
     title: "Research",
@@ -120,7 +120,7 @@ const GUIDES: Record<string, Guide> = {
     title: "History",
     what: (
       <>
-        Your realized track record, read live from Alpaca. It charts account
+        Your realized track record, read live from the configured broker. It charts account
         equity over time and lists the orders that actually filled.
       </>
     ),
@@ -129,7 +129,7 @@ const GUIDES: Record<string, Guide> = {
       <>{b("Trade History")} lists filled orders with date, side, quantity and type.</>,
       <>Click any symbol to revisit its chart.</>,
     ],
-    tip: <>P&L here is Alpaca's account equity change (realized + unrealized) over the period — the same numbers you'd see on the Alpaca site.</>,
+    tip: <>P&L here is the broker account equity change (realized + unrealized) over the period.</>,
   },
   settings: {
     title: "Settings",
@@ -141,10 +141,10 @@ const GUIDES: Record<string, Guide> = {
       </>
     ),
     how: [
-      <>{b("Broker & Safety")} confirms your Alpaca credentials and that you're locked to paper; {b("Automation")} toggles auto-propose.</>,
+      <>{b("Broker & Safety")} confirms your IBKR socket settings and that you're locked to paper; {b("Automation")} toggles auto-trade.</>,
       <>{b("Universe")} picks what gets scanned — the stable {b("Core liquid set")} is best for swing relative-strength. {b("Signal Weights")} and {b("Sentiment & Fundamentals")} shape the score (veto-only mode keeps sentiment/fundamentals out of the score and uses them only to block bad buys).</>,
       <>{b("Quant Controls")} and {b("Risk Limits")} hold the guardrails: regime gate, earnings blackout, sector cap, min agreement, position/exposure caps and ATR stops.</>,
-      <>{b("Watchlist")} manages your starred symbols (auto-synced to Alpaca).</>,
+      <>{b("Watchlist")} manages your starred symbols (broker sync is best-effort; IBKR is no-op).</>,
     ],
     tip: <>New here? The “Getting Started” panel further down replays the full broker's walkthrough of finding, buying and selling a name.</>,
   },

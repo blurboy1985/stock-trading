@@ -1,7 +1,7 @@
 """Pre-trade risk checks and position sizing.
 
 Every order — manual, auto, paper, or live — must pass ``validate_order`` before
-reaching Alpaca. This is the single chokepoint enforcing position-size caps,
+reaching the broker. This is the single chokepoint enforcing position-size caps,
 total-exposure caps, and buying-power limits, and it computes the protective
 stop-loss / take-profit bracket.
 """
@@ -138,16 +138,23 @@ def validate_order(
     if order_value > float(account.get("buying_power", 0)):
         return RiskDecision(ok=False, reason="insufficient buying power")
 
-    # Per-position cap (existing exposure to this symbol + this order).
+    # Per-position cap (existing exposure to this symbol + this order). Allow a
+    # configured benchmark core ETF (e.g. RSP) to grow up to its core target even
+    # when ordinary single-name caps are lower.
     existing = next((p for p in positions if p["symbol"] == symbol), None)
     existing_val = float(existing["market_value"]) if existing else 0.0
     pos_pct = (existing_val + order_value) / equity
-    if pos_pct > cfg["max_position_pct"] + 1e-9:
+    position_limit = cfg["max_position_pct"]
+    core_symbol = str(cfg.get("core_symbol") or "").upper()
+    core_target = float(cfg.get("core_target_pct") or 0.0)
+    if core_target > 0 and symbol.upper() == core_symbol:
+        position_limit = max(position_limit, core_target + float(cfg.get("core_rebalance_threshold_pct") or 0.0))
+    if pos_pct > position_limit + 1e-9:
         return RiskDecision(
             ok=False,
             reason=(
                 f"position would be {pos_pct:.0%} of equity "
-                f"(max {cfg['max_position_pct']:.0%})"
+                f"(max {position_limit:.0%})"
             ),
         )
 

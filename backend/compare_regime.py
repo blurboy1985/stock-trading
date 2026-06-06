@@ -7,7 +7,7 @@ fewer trades the gate let through.
 """
 from __future__ import annotations
 
-from app import alpaca_client as ac
+from app import broker_client as ac
 from app.backtest.engine import BacktestConfig, run_backtest
 
 SYMBOLS = ["AAPL", "MSFT", "NVDA", "AMZN", "META", "JPM", "XOM", "UNH", "SPY"]

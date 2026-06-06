@@ -15,7 +15,18 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    # ── Alpaca ────────────────────────────────────────────────────────
+    # ── Broker ────────────────────────────────────────────────────────
+    broker: str = "ibkr"
+    ibkr_host: str = "127.0.0.1"
+    ibkr_port: int = 4002
+    ibkr_client_id: int = 11
+    ibkr_account: str = ""
+    ibkr_trading_mode: str = "paper"
+    trading_enabled: bool = False
+    paper_starting_cash: float = 100_000.0
+    paper_cash_adjustment: float = 0.0
+
+    # ── Legacy Alpaca settings (kept only for backwards-compatible env parsing)
     apca_api_key_id: str = ""
     apca_api_secret_key: str = ""
     alpaca_base_url: str = "https://paper-api.alpaca.markets"
@@ -29,8 +40,12 @@ class Settings(BaseSettings):
 
     # ── LLM sentiment backend (optional) ──────────────────────────────
     # Only used when the `sentiment_backend` setting is "llm". It runs through
-    # the local Claude Code CLI subscription (Claude Agent SDK) — no API key.
-    # Leave the model blank to use the CLI's default; set it to pin a model.
+    # the local Hermes CLI, so it uses the same ChatGPT/OpenAI subscription that
+    # Hermes itself is authenticated with; no OpenAI API key is required here.
+    # Leave the model blank to use Hermes' configured default; set it to pin one.
+    chatgpt_sentiment_model: str = ""
+    hermes_cli: str = "hermes"
+    # Deprecated legacy knob, accepted only so old .env files keep loading.
     anthropic_sentiment_model: str = ""
 
     # ── Safety ────────────────────────────────────────────────────────
@@ -51,11 +66,17 @@ class Settings(BaseSettings):
 
     @property
     def is_paper(self) -> bool:
-        """True when pointed at the paper endpoint (no real money)."""
+        """True when configured for paper/simulated trading."""
+        if self.broker.lower() == "ibkr":
+            return self.ibkr_trading_mode.lower() != "live"
         return "paper" in self.alpaca_base_url.lower()
 
     @property
     def has_credentials(self) -> bool:
+        """Whether the selected broker has enough configuration to attempt use."""
+        if self.broker.lower() == "ibkr":
+            # IBKR uses the local TWS/Gateway socket, not API keys. Connection is lazy.
+            return bool(self.ibkr_host and self.ibkr_port and self.ibkr_client_id)
         return bool(self.apca_api_key_id and self.apca_api_secret_key)
 
     @property

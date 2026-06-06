@@ -17,7 +17,7 @@ export function Research() {
   const recs = data?.recommendations ?? [];
   if (recs.length === 0) {
     return (
-      <ErrorBanner message="No data yet. Configure Alpaca credentials and refresh recommendations." />
+      <ErrorBanner message="No data yet. Configure IBKR/TWS settings and refresh recommendations." />
     );
   }
 

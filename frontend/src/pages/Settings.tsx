@@ -9,7 +9,7 @@ import { SectionGuide } from "../components/SectionGuide";
 const SIGNALS = ["technical", "volatility", "momentum", "sentiment", "fundamentals"];
 
 const NEWS_SOURCE_LABELS: Record<string, string> = {
-  alpaca: "Alpaca (Benzinga)",
+  alpaca: "Legacy Alpaca/Benzinga",
   yfinance: "Yahoo Finance",
   finnhub: "Finnhub",
   marketaux: "Marketaux",
@@ -28,7 +28,10 @@ export function Settings() {
 
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.updateSettings(body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["reco"] });
+    },
   });
   const addSym = useMutation({
     mutationFn: (s: string) => api.addSymbol(s),
@@ -57,7 +60,7 @@ export function Settings() {
       {/* Broker / safety status */}
       <Panel title="Broker & Safety">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-          <StatusRow ok={broker.has_credentials} label="Alpaca credentials" />
+          <StatusRow ok={broker.has_credentials} label="IBKR socket configured" />
           <StatusRow ok={broker.is_paper} label="Paper mode" warnIfFalse />
           <StatusRow
             ok={!broker.live_trading_enabled}
@@ -71,7 +74,7 @@ export function Settings() {
           </div>
         )}
         {!broker.has_credentials && (
-          <ErrorBanner message="Add APCA_API_KEY_ID and APCA_API_SECRET_KEY to backend/.env, then restart the backend." />
+          <ErrorBanner message="Set IBKR_HOST, IBKR_PORT and IBKR_CLIENT_ID in backend/.env, start TWS/Gateway, enable Socket API, then restart the backend." />
         )}
       </Panel>
 
@@ -88,7 +91,7 @@ export function Settings() {
             Auto-propose trades during market hours
             <span className="text-slate-500">
               {" "}
-              — you confirm each one before any order is placed (paper only). Review
+              — you confirm each one before any order is placed. Paper mode remains default. Review
               proposals on the Automation tab.
             </span>
           </span>
@@ -198,11 +201,11 @@ export function Settings() {
               className="inp"
             >
               <option value="lexicon">Lexicon (VADER + Loughran–McDonald)</option>
-              <option value="llm">Claude (LLM) — uses Claude Code subscription</option>
+              <option value="llm">ChatGPT (LLM) — uses Hermes ChatGPT subscription</option>
             </select>
             <span className="text-[11px] text-slate-500">
-              LLM runs via the local Claude Code CLI (no API key); falls back to
-              the lexicon on any error.
+              LLM runs via the local Hermes CLI using the same ChatGPT/OpenAI
+              subscription as Hermes Agent; falls back to the lexicon on any error.
             </span>
           </label>
           <NumField
@@ -245,16 +248,16 @@ export function Settings() {
       {/* News sources */}
       <Panel title="News Sources (sentiment)">
         <p className="text-xs text-slate-500 mb-3">
-          Which feeds power the sentiment signal. Alpaca (Benzinga) is the fast
-          batched default. Extra sources are fetched per-symbol and merged with{" "}
+          Which feeds power the sentiment signal. Yahoo Finance is the default
+          no-key feed. Extra sources are fetched per-symbol and merged with{" "}
           <span className="text-slate-400">event-level de-duplication</span> — the
           same story across many outlets is collapsed to one event, so duplicate
           coverage can't bias the score.
         </p>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
-          {(newsInfo?.all_sources ?? ["alpaca"]).map((src) => {
-            const selected = (draft.news_sources ?? ["alpaca"]).includes(src);
-            const available = (newsInfo?.available_sources ?? ["alpaca"]).includes(src);
+          {(newsInfo?.all_sources ?? ["yfinance"]).map((src) => {
+            const selected = (draft.news_sources ?? ["yfinance"]).includes(src);
+            const available = (newsInfo?.available_sources ?? ["yfinance"]).includes(src);
             return (
               <label
                 key={src}
@@ -274,7 +277,7 @@ export function Settings() {
                   disabled={!available}
                   checked={selected && available}
                   onChange={() => {
-                    const cur = draft.news_sources ?? ["alpaca"];
+                    const cur = draft.news_sources ?? ["yfinance"];
                     update(
                       "news_sources",
                       cur.includes(src)
@@ -307,7 +310,7 @@ export function Settings() {
             </select>
             <span className="text-[11px] text-slate-500">
               Extra feeds make a per-symbol HTTP call; scoping to the watchlist
-              keeps a broad scan fast. Alpaca always covers the full universe.
+              keeps a broad scan fast. Yahoo Finance remains available without API keys.
             </span>
           </label>
           <NumField
@@ -504,24 +507,24 @@ export function Settings() {
             onClick={() => syncWl.mutate()}
             disabled={syncWl.isPending || !broker.has_credentials}
             className="ml-auto bg-accent/20 border border-accent/40 text-accent px-4 rounded-lg hover:bg-accent/30 text-sm disabled:opacity-40"
-            title="Push this watchlist to a 'StockSim' watchlist on your Alpaca account"
+            title="Sync this watchlist to the configured broker when supported"
           >
-            {syncWl.isPending ? "Syncing…" : "Sync to Alpaca"}
+            {syncWl.isPending ? "Syncing…" : "Sync broker watchlist"}
           </button>
         </div>
         {syncWl.isSuccess && (
           <p className="text-buy text-xs mt-2">
             Synced {syncWl.data.symbols.length} symbols to the “{syncWl.data.name}”
-            watchlist on Alpaca ({syncWl.data.action}) — view it on the Alpaca site.
+            broker watchlist ({syncWl.data.action}). IBKR currently treats this as a safe no-op.
           </p>
         )}
         {syncWl.isError && (
           <p className="text-sell text-xs mt-2">{(syncWl.error as Error).message}</p>
         )}
         <p className="text-[11px] text-slate-500 mt-2">
-          Watchlist changes auto-sync to Alpaca; orders, positions, and account
-          balances already live on your Alpaca paper account and appear when you
-          log in to the Alpaca site.
+          Watchlist changes are saved locally; broker sync is best-effort. Orders,
+          positions, and account balances are read through your configured IBKR
+          paper session when TWS/Gateway is running.
         </p>
       </Panel>
 

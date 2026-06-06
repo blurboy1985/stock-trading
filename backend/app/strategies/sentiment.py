@@ -123,6 +123,7 @@ def score_headlines(
     lm_weight: float = _DEFAULT_LM_WEIGHT,
     backend: str = "lexicon",
     llm_model: str | None = None,
+    llm_query_missing: bool = True,
     now: dt.datetime | None = None,
 ) -> SignalResult:
     """Recency-weighted, finance-tuned sentiment over recent news.
@@ -141,7 +142,9 @@ def score_headlines(
         res.reasons.append("no scorable news text")
         return res
 
-    polarity_fn = _select_backend(backend, items, lm_weight, llm_model)
+    polarity_fn, src, backend_used = _select_backend(
+        backend, items, lm_weight, llm_model, query_missing=llm_query_missing
+    )
 
     weighted_sum = weight_total = 0.0
     polarities: list[float] = []
@@ -184,7 +187,6 @@ def score_headlines(
     pos = sum(1 for p in polarities if p > 0.2)
     neg = sum(1 for p in polarities if p < -0.2)
     tone = "positive" if avg > 0.1 else "negative" if avg < -0.1 else "mixed/neutral"
-    src = "Claude" if backend == "llm" else "finance lexicon"
     res.reasons.append(
         f"news sentiment {tone} (recency-wtd {avg:+.2f} via {src} over {n} "
         f"stories: {pos}+ / {neg}-)"
@@ -199,7 +201,7 @@ def score_headlines(
         "raw_count": len(news_items),
         "positive": pos,
         "negative": neg,
-        "backend": backend,
+        "backend": backend_used,
     }
     return res.clamp()
 
@@ -207,21 +209,27 @@ def score_headlines(
 def _select_backend(
     backend: str, items: list[dict[str, Any]], lm_weight: float,
     llm_model: str | None = None,
+    *,
+    query_missing: bool = True,
 ):
-    """Return a ``text -> polarity`` callable for the requested backend.
+    """Return a ``text -> polarity`` callable plus display/backend labels.
 
     The LLM backend scores the whole batch once (cached by headline) and falls
-    back to the lexicon blend if the call fails or returns nothing.
+    back to the lexicon blend if the call fails or returns nothing. Broad
+    recommender refreshes pass ``query_missing=False`` after their best-effort
+    prewarm so cache misses do not create one slow LLM subprocess per symbol.
     """
     if backend == "llm":
         try:
             from .sentiment_llm import batch_polarity
 
-            scores = batch_polarity(items, model=llm_model)
+            scores = batch_polarity(items, model=llm_model, query_missing=query_missing)
             if scores:
-                return lambda text: clamp(
-                    scores.get(text, _blended_polarity(text, lm_weight))
+                return (
+                    lambda text: clamp(scores.get(text, _blended_polarity(text, lm_weight))),
+                    "ChatGPT",
+                    "llm",
                 )
         except Exception:  # noqa: BLE001 — never break a cycle on the LLM path
             pass
-    return lambda text: _blended_polarity(text, lm_weight)
+    return lambda text: _blended_polarity(text, lm_weight), "finance lexicon", "lexicon"

@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from .. import alpaca_client as ac
+from .. import broker_client as ac
 from ..backtest.engine import BacktestConfig, run_backtest
 from ..backtest.sweep import parameter_sweep
 from ..backtest.walkforward import walk_forward
@@ -41,6 +41,9 @@ class BacktestRequest(BaseModel):
     max_position_pct: float = 0.10
     min_dollar_volume: float = 0.0
     min_price: float = 0.0
+    core_symbol: str | None = None
+    core_target_pct: float = 0.0
+    core_rebalance_threshold_pct: float = 0.02
     # Walk-forward / sweep only.
     folds: int = 4
 
@@ -54,6 +57,8 @@ def _fetch_bars(req: "BacktestRequest") -> dict:
     # engine can read its trend (it also trades, just like SPY in the watchlist).
     if req.regime_filter and req.benchmark_symbol.upper() not in symbols:
         symbols.append(req.benchmark_symbol.upper())
+    if req.core_target_pct > 0 and req.core_symbol and req.core_symbol.upper() not in symbols:
+        symbols.append(req.core_symbol.upper())
 
     bars_by_symbol = {}
     try:
@@ -61,7 +66,7 @@ def _fetch_bars(req: "BacktestRequest") -> dict:
             df = ac.get_bars(sym, start=req.start, end=req.end)
             if not df.empty:
                 bars_by_symbol[sym] = df
-    except ac.AlpacaUnavailable as e:
+    except ac.BrokerUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Bars fetch failed: {e}")
@@ -92,6 +97,9 @@ def _build_config(req: "BacktestRequest", **overrides) -> BacktestConfig:
         max_position_pct=req.max_position_pct,
         min_dollar_volume=req.min_dollar_volume,
         min_price=req.min_price,
+        core_symbol=req.core_symbol.upper() if req.core_symbol else None,
+        core_target_pct=req.core_target_pct,
+        core_rebalance_threshold_pct=req.core_rebalance_threshold_pct,
         **overrides,
     )
 

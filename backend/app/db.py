@@ -46,6 +46,9 @@ _ADDED_COLUMNS = {
         "rank_score": "FLOAT",
         "regime": "VARCHAR(16)",
     },
+    "trade_proposals": {
+        "breakdown_json": "JSON",
+    },
 }
 
 

@@ -5,7 +5,7 @@ import { Panel } from "./ui";
 const LIMITATIONS: { title: string; body: string }[] = [
   {
     title: "Paper trading only",
-    body: "Orders, positions and balances run on an Alpaca paper account — no real money is at stake. This is an educational simulator, not financial advice.",
+    body: "Orders, positions and balances run through the configured IBKR paper account by default — no real money is at stake. This is an educational simulator, not financial advice.",
   },
   {
     title: "No guaranteed edge",
@@ -52,7 +52,7 @@ export function DisclaimerFooter() {
     <div className="flex flex-col gap-1 text-xs text-slate-400">
       <p>
         <span className="font-semibold text-slate-300">StockSim</span> is a
-        paper-trading simulator on Alpaca, built for education and research —{" "}
+        IBKR paper-trading simulator, built for education and research —{" "}
         <span className="text-slate-300">not financial advice</span>. No screener
         reliably beats the market; treat every signal as a hypothesis to test.
       </p>

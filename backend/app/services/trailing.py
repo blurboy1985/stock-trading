@@ -6,14 +6,14 @@ holding's price, advance its high-water mark, and ratchet the bracket's *stop*
 leg up toward ``high_water - k*ATR``. The stop only ever tightens — it never
 loosens and is never moved above the live price — so the existing take-profit leg
 of the OCO bracket is left untouched (we amend in place via
-``alpaca_client.replace_order``, which preserves the OCO relationship).
+``broker_client.replace_order``, when supported by the selected broker).
 
 It is intentionally conservative:
 * Only positions that already have an open bracket stop leg are touched — we
   ratchet an existing stop, we never create one.
 * ``trailing_stop_dry_run`` (default on) logs the intended move without calling
   the broker, so you can watch it behave before letting it amend real orders.
-* Alpaca is the source of truth for the position; :class:`PositionTrail` only
+* The broker is the source of truth for the position; :class:`PositionTrail` only
   remembers the high-water mark between cycles, and is reset when a position is
   re-opened or averaged (entry price moves).
 """
@@ -25,7 +25,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from .. import alpaca_client as ac
+from .. import broker_client as ac
 from ..config import settings
 from ..db import SessionLocal
 from ..models import PositionTrail

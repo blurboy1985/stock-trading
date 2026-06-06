@@ -65,8 +65,11 @@ export function Recommendations() {
   });
 
   if (reco.isLoading) return <Spinner label="Scoring the universe…" />;
+  if (reco.isError) return <ErrorBanner message={(reco.error as Error).message} />;
   const data = reco.data;
   const recs = data?.recommendations ?? [];
+  const emptyMessage =
+    data?.message ?? "No recommendations yet. Click Refresh now to scan the universe.";
   const wlCount = recs.filter((r) => r.in_watchlist).length;
 
   const shown = recs.filter((r) => {
@@ -86,7 +89,9 @@ export function Recommendations() {
             ? `Scanned ${recs.length} symbols (★ ${wlCount} watchlist) · ranked by risk-adjusted score · updated ${new Date(
                 data.generated_at,
               ).toLocaleTimeString()}`
-            : "Not yet generated"}
+            : data?.refresh_status === "running"
+              ? "Refresh already running"
+              : "Not yet generated"}
         </div>
         <button
           onClick={() => refresh.mutate()}
@@ -115,9 +120,8 @@ export function Recommendations() {
       </div>
 
       {buy.isError && <ErrorBanner message={(buy.error as Error).message} />}
-      {recs.length === 0 && (
-        <ErrorBanner message="No recommendations. Configure Alpaca credentials and refresh." />
-      )}
+      {refresh.isError && <ErrorBanner message={(refresh.error as Error).message} />}
+      {recs.length === 0 && <ErrorBanner message={emptyMessage} />}
       {recs.length > 0 && shown.length === 0 && (
         <p className="text-slate-400 text-sm py-6 text-center">
           No names match this filter.

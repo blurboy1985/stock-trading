@@ -27,7 +27,9 @@ CORE_LIQUID_UNIVERSE: list[str] = [
     # Consumer staples
     "WMT", "PG", "KO", "PEP", "COST", "MDLZ", "CL", "MO", "PM", "TGT",
     # Financials
-    "BRK.B", "JPM", "V", "MA", "BAC", "WFC", "GS", "MS", "AXP", "SCHW", "BLK",
+    # Exclude BRK.B/BRK-B: Yahoo and IBKR use different class-share symbols,
+    # which makes automated research/order routing unreliable in this app.
+    "JPM", "V", "MA", "BAC", "WFC", "GS", "MS", "AXP", "SCHW", "BLK",
     "C", "SPGI", "CB", "PYPL",
     # Health care
     "UNH", "JNJ", "LLY", "ABBV", "MRK", "PFE", "TMO", "ABT", "DHR", "BMY",

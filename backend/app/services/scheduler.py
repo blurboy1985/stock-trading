@@ -1,33 +1,56 @@
-"""Background scheduler: periodic recommendation refresh + auto-trade proposals.
+"""Background scheduler: periodic recommendation refresh + paper auto-trading.
 
 During market hours it regenerates recommendations every few minutes and, when
-``auto_trade`` is enabled, *proposes* entries/exits (it never places orders
-itself). The user confirms each proposal in the UI, and only that explicit
-confirm reaches the broker — always paper (see ``portfolio._live_gate``), so
-automation is fail-safe by construction.
+``auto_trade`` is enabled, creates auditable trade proposals and immediately
+executes confirmable ones through the same paper-only portfolio order path. Live
+orders remain blocked by ``portfolio._live_gate``.
 """
 from __future__ import annotations
 
 import datetime as dt
 import logging
+import threading
 from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from .. import alpaca_client as ac
+from .. import broker_client as ac
 from ..config import settings
 from . import proposals, recommender, runtime_settings, trailing
 
 log = logging.getLogger("scheduler")
 
 _scheduler: BackgroundScheduler | None = None
+_cycle_lock = threading.Lock()
 
 # Latest cycle output, served to clients without recomputing.
 LATEST: dict[str, Any] = {
-    "recommendations": [], "generated_at": None, "regime": None,
+    "recommendations": [],
+    "generated_at": None,
+    "regime": None,
+    "top_buys": [],
+    "top_sells": [],
+    "message": None,
+    "errors": {},
+    "refresh_status": "idle",
+    "universe_signature": None,
 }
 
 REFRESH_MINUTES = 15
+
+
+
+
+def _universe_signature() -> dict[str, object] | None:
+    try:
+        cfg = runtime_settings.get_all()
+    except Exception:  # noqa: BLE001 — settings lookup must not break refresh
+        return None
+    return {
+        "benchmark_symbol": cfg.get("benchmark_symbol"),
+        "universe_source": cfg.get("universe_source"),
+        "universe_size": cfg.get("universe_size"),
+    }
 
 
 def _market_open() -> bool:
@@ -38,42 +61,95 @@ def _market_open() -> bool:
 
 
 def run_cycle(force: bool = False) -> dict[str, Any]:
-    """One full pass: refresh recommendations and (if on) propose auto-trades."""
-    if not settings.has_credentials:
-        return {"skipped": "no credentials"}
-    if not force and not _market_open():
-        return {"skipped": "market closed"}
+    """One full pass: refresh recommendations and (if on) propose auto-trades.
 
-    reco = recommender.generate(persist=True)
-    proposed: list[dict[str, Any]] = []
+    The UI can request recommendations while the startup scheduler is already
+    scanning. Avoid concurrent cycles: IBKR allows one session per client id and
+    concurrent broker calls can wedge page loads.
+    """
+    if not _cycle_lock.acquire(blocking=False):
+        LATEST["refresh_status"] = "running"
+        return {"skipped": "cycle already running"}
+    try:
+        LATEST.update(refresh_status="running", message=None, errors={})
+        if not settings.has_credentials:
+            message = "IBKR is not configured. Set IBKR_HOST, IBKR_PORT and IBKR_CLIENT_ID, then restart the backend."
+            LATEST.update(
+                recommendations=[],
+                top_buys=[],
+                top_sells=[],
+                generated_at=None,
+                regime=None,
+                message=message,
+                errors={},
+                refresh_status="skipped",
+                universe_signature=None,
+            )
+            return {"skipped": "no credentials", "message": message}
+        if not force and not _market_open():
+            LATEST.update(refresh_status="skipped", message="Market is closed; using the last generated recommendations.")
+            return {"skipped": "market closed", "message": LATEST.get("message")}
 
-    if runtime_settings.get("auto_trade") and reco.get("configured"):
-        # Supersede last cycle's untouched proposals, then propose fresh ones.
-        proposals.expire_stale()
-        proposed = proposals.build_from_reco(reco)
+        reco = recommender.generate(persist=True)
+        proposed: list[dict[str, Any]] = []
+        executed: list[dict[str, Any]] = []
+        proposal_error: str | None = None
 
-    # Ratchet trailing stops on held positions (no-op unless enabled). Self-gated
-    # and never raises, but wrap defensively so it can't break the cycle.
-    trail: dict[str, Any] = {}
-    if runtime_settings.get("trailing_stop_enabled"):
-        try:
-            trail = trailing.run()
-        except Exception:  # noqa: BLE001
-            log.exception("trailing-stop pass failed")
-            trail = {"error": "exception"}
+        if runtime_settings.get("auto_trade") and reco.get("configured"):
+            # Supersede last cycle's untouched proposals, propose fresh trades,
+            # then immediately execute confirmable proposals. The proposal rows
+            # remain as an audit trail, while order placement still goes through
+            # portfolio.place_order/close_position and its paper/live safety gate.
+            try:
+                proposals.expire_stale()
+                proposed = proposals.build_from_reco(reco)
+                executed = proposals.confirm_all().get("results", [])
+            except Exception as exc:  # noqa: BLE001
+                log.exception("auto-trade pass failed")
+                proposal_error = f"{type(exc).__name__}: {exc}"
 
-    LATEST.update(
-        recommendations=reco.get("recommendations", []),
-        top_buys=reco.get("top_buys", []),
-        top_sells=reco.get("top_sells", []),
-        generated_at=reco.get("generated_at"),
-        regime=reco.get("regime"),
-    )
-    return {
-        "recommendations": len(reco.get("recommendations", [])),
-        "proposals": len(proposed),
-        "trailing_moves": len(trail.get("moves", [])),
-    }
+        # Ratchet trailing stops on held positions (no-op unless enabled). Self-gated
+        # and never raises, but wrap defensively so it can't break the cycle.
+        trail: dict[str, Any] = {}
+        if runtime_settings.get("trailing_stop_enabled"):
+            try:
+                trail = trailing.run()
+            except Exception:  # noqa: BLE001
+                log.exception("trailing-stop pass failed")
+                trail = {"error": "exception"}
+
+        universe_signature = _universe_signature()
+
+        LATEST.update(
+            recommendations=reco.get("recommendations", []),
+            top_buys=reco.get("top_buys", []),
+            top_sells=reco.get("top_sells", []),
+            generated_at=reco.get("generated_at"),
+            regime=reco.get("regime"),
+            proposal_error=proposal_error,
+            message=reco.get("message"),
+            errors=reco.get("errors", {}),
+            refresh_status="complete",
+            universe_signature=universe_signature,
+        )
+        return {
+            "recommendations": len(reco.get("recommendations", [])),
+            "proposals": len(proposed),
+            "executed": len([r for r in executed if r.get("ok")]),
+            "execution_errors": len([r for r in executed if not r.get("ok")]),
+            "proposal_error": proposal_error,
+            "trailing_moves": len(trail.get("moves", [])),
+            "message": reco.get("message"),
+        }
+    except Exception as exc:  # noqa: BLE001
+        message = f"Refresh failed: {type(exc).__name__}: {exc}"
+        LATEST.update(message=message, refresh_status="failed")
+        log.exception("recommendation refresh failed")
+        return {"error": message}
+    finally:
+        if LATEST.get("refresh_status") == "running":
+            LATEST["refresh_status"] = "idle"
+        _cycle_lock.release()
 
 
 def start_scheduler() -> None:

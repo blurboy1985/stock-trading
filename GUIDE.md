@@ -15,13 +15,14 @@ the tool *does* and, just as importantly, what it does **not** do.
 
 ## 0. One-time setup
 
-1. **Get free Alpaca paper credentials** at <https://alpaca.markets> → *Paper
-   Trading* dashboard → generate an API key + secret.
+1. **Start IBKR paper TWS or IB Gateway.** Enable API → Socket Clients. No API
+   key is required for the normal IBKR socket API. Use port `4002` for IB Gateway
+   paper or `7497` for TWS paper.
 2. **Backend** — from `backend/`:
    ```powershell
    python -m venv .venv
    .venv\Scripts\python.exe -m pip install -r requirements.txt
-   copy .env.example .env     # paste APCA_API_KEY_ID / APCA_API_SECRET_KEY
+   copy .env.example .env     # keep IBKR paper defaults, or set IBKR_PORT=7497 for TWS paper
    ```
 3. **Frontend** — from `frontend/`: `npm install`.
 4. **Launch both** — from the repo root: `./dev.ps1` (opens backend on `:8000`,
@@ -29,10 +30,10 @@ the tool *does* and, just as importantly, what it does **not** do.
 
 The header badge shows **● PAPER** (green) or **● LIVE** (red) so you always
 know which money is at stake. It will read PAPER unless you have deliberately
-switched to live keys (see §7).
+deliberately switched IBKR_TRADING_MODE to live and unlocked the safety gates.
 
-> Runs without credentials too — pages show a clear "not configured" message and
-> point you to Settings.
+> The app starts even when TWS/Gateway is not running; broker-backed pages show a
+> clear "not connected" message until the local IBKR socket is ready.
 
 ---
 
@@ -42,9 +43,8 @@ Do this before your first session; revisit only when your strategy changes.
 
 - **Watchlist** — add/remove the tickers you want ranked (default is 10 liquid
   large-caps + SPY). This *is* your universe; the engine only scores these.
-  Changes **auto-sync to a "StockSim" watchlist on your Alpaca account** (and a
-  **Sync to Alpaca** button forces it), so you can see the same list when you log
-  in to the Alpaca site.
+  Changes are saved locally. Broker watchlist sync is best-effort; the IBKR
+  adapter currently treats it as a safe no-op.
 - **Signal weights** — how much each family counts toward the composite score
   (technical / volatility / momentum / sentiment / fundamentals). Auto-normalized
   across active signals. Leave at defaults until a backtest tells you otherwise.
@@ -128,7 +128,7 @@ Click any symbol (from Dashboard, Recommendations, or Research) to open
 
 Every order — here, the one-click Buy on Recommendations, or the auto-trader —
 passes the **single risk chokepoint** (`services/risk.py`) before it reaches
-Alpaca:
+the configured broker:
 
 - **Sell** only what you hold (no shorting in the simulator).
 - **Buy** is rejected if it exceeds buying power, the **per-position cap**, or the
@@ -223,23 +223,20 @@ composite BUY/SELL call.
 
 ---
 
-## What syncs to your Alpaca account
+## What syncs to IBKR / broker state
 
-Everything that matters is **Alpaca-native** — the app uses your Alpaca paper
-account as the source of truth, so logging in to the Alpaca site shows the same
-state:
+The broker is the source of truth for orders, positions, equity, cash, and buying
+power. With IBKR, verify broker state in TWS/Gateway:
 
-| In the app | On the Alpaca site |
-|------------|--------------------|
-| Buy / Sell / close position | Orders & fills in your paper order history |
-| Cancel (Open Orders panel) | The order is cancelled on Alpaca |
-| Stop-loss / take-profit bracket | The attached OCO child orders |
-| Open positions, equity, cash, buying power | Read live from your Alpaca account |
-| Watchlist | Mirrored to a **"StockSim"** watchlist (auto + manual sync) |
+| In the app | In IBKR TWS/Gateway |
+|------------|---------------------|
+| Buy / Sell / close position | Orders and fills in your paper order/execution views |
+| Cancel (Open Orders panel) | The order is cancelled at the broker if still working |
+| Open positions, equity, cash, buying power | Read live through the IBKR socket API |
+| Watchlist | Stored locally; IBKR watchlist sync is currently no-op |
 
-Recommendations, the regime read, and backtests are computed locally from Alpaca
-market data — they're analysis layers, not account state, so they don't appear on
-the Alpaca site (by nature).
+Recommendations, the regime read, and backtests are computed locally from market
+data and strategy code — they are analysis layers, not broker account state.
 
 ---
 
@@ -265,24 +262,23 @@ not the underlying daily signals.
 
 ## 9. Track results over time (History tab)
 
-The **History** tab reads your Alpaca account's performance: a **P&L summary and
-equity curve** over a selectable window (1M / 3M / 1Y, Alpaca-computed realized +
-unrealized), plus a **trade history** table of your filled orders. It's the
-account-level scoreboard for how your paper trading is actually doing — the same
-numbers you'd see on the Alpaca site.
+The **History** tab reads broker account performance where available: a **P&L
+summary and equity curve** over a selectable window (1M / 3M / 1Y), plus a
+**trade history** table of your filled orders. With the first IBKR adapter,
+portfolio history is conservative and may be limited until paper integration is
+expanded.
 
 ---
 
 ## Paper-only by design
 
-**This app is a paper-trading simulator on the Alpaca API** — by design it places
-**paper orders only**. The header stays **● PAPER**, the auto-trader is
-structurally paper-only, and the live-trading kill switch (`LIVE_TRADING`,
-non-paper endpoint, per-order confirmation) remains in the code but the UI does
-not surface a live-order path. There is no real money at risk. If you ever decide
-to pursue real-money trading, that is a separate, deliberate engineering step —
-and only worth considering after a strategy has shown an out-of-sample edge **and**
-weeks of profitable paper trading.
+**This app defaults to IBKR paper trading**. `TRADING_ENABLED=false` prevents any
+order submission until deliberately changed. Real-money orders require
+`IBKR_TRADING_MODE=live`, `LIVE_TRADING=true`, `TRADING_ENABLED=true`, and
+explicit per-order confirmation. If you ever decide to pursue real-money trading,
+that is a separate, deliberate engineering step — and only worth considering
+after a strategy has shown an out-of-sample edge **and** weeks of profitable paper
+trading.
 
 ---
 
