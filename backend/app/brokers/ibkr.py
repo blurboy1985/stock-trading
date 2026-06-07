@@ -163,7 +163,20 @@ def _summary_map(ib) -> dict[str, Any]:
         rows = ib.accountValues(account) if account else ib.accountValues()
     except Exception:
         rows = []
-    return {getattr(r, "tag", ""): r for r in rows or []}
+    # Multi-currency accounts report monetary tags once per currency *plus* a
+    # consolidated row with currency "BASE" (summed into the account base
+    # currency). A plain {tag: row} dict keeps whichever currency happens to be
+    # last, so cash could reflect a single currency's (possibly negative)
+    # balance instead of the total. Prefer the "BASE" row when present so cash
+    # and positions reconcile with NetLiquidation.
+    summary: dict[str, Any] = {}
+    for r in rows or []:
+        tag = getattr(r, "tag", "")
+        if not tag:
+            continue
+        if tag not in summary or (getattr(r, "currency", "") or "").upper() == "BASE":
+            summary[tag] = r
+    return summary
 
 
 def _get_account_unlocked() -> dict[str, Any]:
@@ -179,6 +192,8 @@ def _get_account_unlocked() -> dict[str, Any]:
     buying_power = val("BuyingPower", cash)
     gross = val("GrossPositionValue")
     currency = getattr(sm.get("NetLiquidation"), "currency", "USD") or "USD"
+    if currency.upper() == "BASE":
+        currency = "USD"
     if settings.is_paper and not any((equity, cash, buying_power, gross)):
         cash = equity = buying_power = float(settings.paper_starting_cash)
     if settings.is_paper:

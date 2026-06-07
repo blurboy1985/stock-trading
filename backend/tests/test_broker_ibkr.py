@@ -76,6 +76,37 @@ def test_ibkr_connect_disables_multi_account_group_request(monkeypatch):
     )
 
 
+def test_ibkr_multi_currency_cash_uses_consolidated_base_row(monkeypatch):
+    """Cash must reflect the consolidated BASE total, not a single currency line.
+
+    A multi-currency account reports TotalCashValue once per currency plus a
+    "BASE" consolidated row. A negative USD cash line must not shadow the
+    positive base-currency total, or cash won't reconcile with NetLiquidation.
+    """
+    from app.brokers import ibkr
+
+    ib = Mock()
+    ib.managedAccounts.return_value = ["DU123"]
+    ib.accountValues.return_value = [
+        SimpleNamespace(account="DU123", tag="NetLiquidation", value="98087.74", currency="USD"),
+        SimpleNamespace(account="DU123", tag="GrossPositionValue", value="78731.07", currency="USD"),
+        # Consolidated cash first, then a single-currency line that must NOT win.
+        SimpleNamespace(account="DU123", tag="TotalCashValue", value="19356.67", currency="BASE"),
+        SimpleNamespace(account="DU123", tag="TotalCashValue", value="-3400.27", currency="USD"),
+    ]
+    monkeypatch.setattr(ibkr, "_connect", lambda: ib)
+    monkeypatch.setattr(ibkr.settings, "ibkr_trading_mode", "paper")
+    monkeypatch.setattr(ibkr.settings, "paper_cash_adjustment", 0.0)
+
+    account = ibkr.get_account()
+
+    assert account["cash"] == 19356.67
+    assert account["portfolio_value"] == 98087.74
+    assert account["position_market_value"] == 78731.07
+    # positions + cash reconcile with net liquidation value
+    assert round(account["position_market_value"] + account["cash"], 2) == account["portfolio_value"]
+
+
 def test_ibkr_paper_cash_adjustment_adds_to_account(monkeypatch):
     from app.brokers import ibkr
 
