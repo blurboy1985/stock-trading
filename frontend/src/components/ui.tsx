@@ -8,12 +8,24 @@ const finiteNumber = (n: Numeric): number | null => {
   return Number.isFinite(value) ? value : null;
 };
 
-export const fmtUsd = (n: Numeric) => {
+export const fmtCur = (n: Numeric, currency: string | null | undefined = "USD") => {
   const value = finiteNumber(n);
-  return value == null
-    ? "—"
-    : value.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  if (value == null) return "—";
+  const code = (currency || "USD").toUpperCase();
+  try {
+    return value.toLocaleString("en-US", { style: "currency", currency: code });
+  } catch {
+    // Unknown/invalid ISO code — fall back to a plain number with the code.
+    return `${code} ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
 };
+
+export const fmtSignedCur = (n: Numeric, currency: string | null | undefined = "USD") => {
+  const value = finiteNumber(n);
+  return value == null ? "—" : `${value >= 0 ? "+" : "-"}${fmtCur(Math.abs(value), currency)}`;
+};
+
+export const fmtUsd = (n: Numeric) => fmtCur(n, "USD");
 
 export const fmtPct = (n: Numeric, digits = 2) => {
   const value = finiteNumber(n);

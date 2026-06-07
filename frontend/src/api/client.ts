@@ -94,6 +94,12 @@ export interface Position {
   asset_class: string;
   exchange: string;
   side: string;
+  currency?: string;
+  base_currency?: string;
+  fx_to_base?: number;
+  market_value_base?: number;
+  cost_basis_base?: number;
+  unrealized_pl_base?: number;
 }
 
 export interface Account {

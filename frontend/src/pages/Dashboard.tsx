@@ -10,9 +10,11 @@ import {
   Spinner,
   ErrorBanner,
   fmtUsd,
+  fmtCur,
   fmtPct,
   fmtNum,
   fmtSignedUsd,
+  fmtSignedCur,
   fmtSignedPct,
 } from "../components/ui";
 import { RegimeBanner } from "../components/RegimeBanner";
@@ -152,19 +154,24 @@ export function Dashboard() {
   const openOrders: OrderRow[] = orders.data?.orders ?? [];
   const acts: Activity[] = activities.data?.activities ?? [];
 
+  const baseCcy = acct?.currency || "USD";
   const dayPl = acct ? numeric(acct.equity) - numeric(acct.last_equity) : 0;
   const dayPlPct = acct && numeric(acct.last_equity) ? dayPl / numeric(acct.last_equity) : 0;
 
+  // Positions can be held in different currencies (e.g. USD stocks in an
+  // SGD-based account). Totals are summed in the account base currency so they
+  // reconcile with the account balances above; per-row figures stay local.
   const totals = positions.reduce(
     (a, pos) => ({
-      mv: a.mv + numeric(pos.market_value),
-      cost: a.cost + numeric(pos.cost_basis),
-      pl: a.pl + numeric(pos.unrealized_pl),
-      day: a.day + numeric(pos.unrealized_intraday_pl),
+      mv: a.mv + numeric(pos.market_value_base ?? pos.market_value),
+      cost: a.cost + numeric(pos.cost_basis_base ?? pos.cost_basis),
+      pl: a.pl + numeric(pos.unrealized_pl_base ?? pos.unrealized_pl),
+      day: a.day + numeric(pos.unrealized_intraday_pl) * numeric(pos.fx_to_base ?? 1),
     }),
     { mv: 0, cost: 0, pl: 0, day: 0 },
   );
   const totalPlPct = totals.cost ? totals.pl / totals.cost : 0;
+  const multiCurrency = positions.some((pos) => (pos.currency || baseCcy) !== baseCcy);
   const updatedAt = portfolio.dataUpdatedAt ? new Date(portfolio.dataUpdatedAt) : null;
 
   return (
@@ -203,21 +210,21 @@ export function Dashboard() {
       {/* ── Balances summary ─────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat
-          label="Portfolio Value"
-          value={fmtUsd(acct?.portfolio_value)}
-          sub={`${fmtSignedUsd(dayPl)} (${fmtSignedPct(dayPlPct)}) today`}
+          label={`Portfolio Value (${baseCcy})`}
+          value={fmtCur(acct?.portfolio_value, baseCcy)}
+          sub={`${fmtSignedCur(dayPl, baseCcy)} (${fmtSignedPct(dayPlPct)}) today`}
           tone={dayPl > 0 ? "up" : dayPl < 0 ? "down" : "neutral"}
         />
-        <Stat label="Equity" value={fmtUsd(acct?.equity)} sub={`Prev close ${fmtUsd(acct?.last_equity)}`} />
+        <Stat label="Equity" value={fmtCur(acct?.equity, baseCcy)} sub={`Prev close ${fmtCur(acct?.last_equity, baseCcy)}`} />
         <Stat
           label="Cash"
-          value={fmtUsd(acct?.cash)}
+          value={fmtCur(acct?.cash, baseCcy)}
           sub={`${fmtPct(acct?.equity ? (numeric(acct.cash) / numeric(acct.equity)) : 0)} of equity`}
         />
         <Stat
           label="Buying Power"
-          value={fmtUsd(acct?.buying_power)}
-          sub={`RegT ${fmtUsd(acct?.regt_buying_power)}`}
+          value={fmtCur(acct?.buying_power, baseCcy)}
+          sub={`RegT ${fmtCur(acct?.regt_buying_power, baseCcy)}`}
         />
       </div>
 
@@ -228,17 +235,17 @@ export function Dashboard() {
         <Panel title="Balances" className="lg:col-span-2">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8">
             <div>
-              <DefRow label="Long market value" value={fmtUsd(acct?.long_market_value)} />
-              <DefRow label="Short market value" value={fmtUsd(acct?.short_market_value)} />
-              <DefRow label="Position market value" value={fmtUsd(acct?.position_market_value)} />
-              <DefRow label="Cash" value={fmtUsd(acct?.cash)} />
-              <DefRow label="Accrued fees" value={fmtUsd(acct?.accrued_fees)} />
+              <DefRow label="Long market value" value={fmtCur(acct?.long_market_value, baseCcy)} />
+              <DefRow label="Short market value" value={fmtCur(acct?.short_market_value, baseCcy)} />
+              <DefRow label="Position market value" value={fmtCur(acct?.position_market_value, baseCcy)} />
+              <DefRow label="Cash" value={fmtCur(acct?.cash, baseCcy)} />
+              <DefRow label="Accrued fees" value={fmtCur(acct?.accrued_fees, baseCcy)} />
               <DefRow label="Account number" value={acct?.account_number || "—"} />
             </div>
             <div>
-              <DefRow label="Initial margin" value={fmtUsd(acct?.initial_margin)} />
-              <DefRow label="Maintenance margin" value={fmtUsd(acct?.maintenance_margin)} />
-              <DefRow label="Day-trading buying power" value={fmtUsd(acct?.daytrading_buying_power)} />
+              <DefRow label="Initial margin" value={fmtCur(acct?.initial_margin, baseCcy)} />
+              <DefRow label="Maintenance margin" value={fmtCur(acct?.maintenance_margin, baseCcy)} />
+              <DefRow label="Day-trading buying power" value={fmtCur(acct?.daytrading_buying_power, baseCcy)} />
               <DefRow
                 label="Day trades (5d)"
                 value={String(acct?.daytrade_count ?? 0)}
@@ -289,6 +296,7 @@ export function Dashboard() {
         {positions.length === 0 ? (
           <p className="text-slate-400 text-sm py-6 text-center">No open positions.</p>
         ) : (
+          <>
           <div className="overflow-x-auto">
             <table className="w-full text-sm whitespace-nowrap">
               <thead className="text-slate-400 text-xs uppercase">
@@ -315,6 +323,9 @@ export function Dashboard() {
                         <Link to={`/ticker/${pos.symbol}`} className="hover:text-accent">
                           {pos.symbol}
                         </Link>
+                        {pos.currency && pos.currency !== baseCcy && (
+                          <span className="ml-1.5 text-[10px] font-normal text-slate-500">{pos.currency}</span>
+                        )}
                       </td>
                       <td className="pr-3">
                         <span className={pos.side === "long" ? "text-buy" : "text-sell"}>
@@ -322,20 +333,20 @@ export function Dashboard() {
                         </span>
                       </td>
                       <td className="pr-3 text-right tabular-nums">{fmtNum(pos.qty, 0)}</td>
-                      <td className="pr-3 text-right tabular-nums">{fmtUsd(pos.avg_entry_price)}</td>
-                      <td className="pr-3 text-right tabular-nums">{fmtUsd(pos.current_price)}</td>
+                      <td className="pr-3 text-right tabular-nums">{fmtCur(pos.avg_entry_price, pos.currency)}</td>
+                      <td className="pr-3 text-right tabular-nums">{fmtCur(pos.current_price, pos.currency)}</td>
                       <td className="pr-3 text-right tabular-nums text-slate-400">
-                        {fmtUsd(pos.cost_basis)}
+                        {fmtCur(pos.cost_basis, pos.currency)}
                       </td>
-                      <td className="pr-3 text-right tabular-nums">{fmtUsd(pos.market_value)}</td>
+                      <td className="pr-3 text-right tabular-nums">{fmtCur(pos.market_value, pos.currency)}</td>
                       <td className={`pr-3 text-right tabular-nums ${signClass(pos.unrealized_intraday_pl)}`}>
-                        {fmtSignedUsd(pos.unrealized_intraday_pl)}
+                        {fmtSignedCur(pos.unrealized_intraday_pl, pos.currency)}
                         <span className="block text-[11px] opacity-80">
                           {fmtSignedPct(pos.change_today)}
                         </span>
                       </td>
                       <td className={`pr-3 text-right tabular-nums ${signClass(pos.unrealized_pl)}`}>
-                        {fmtSignedUsd(pos.unrealized_pl)}
+                        {fmtSignedCur(pos.unrealized_pl, pos.currency)}
                         <span className="block text-[11px] opacity-80">
                           {fmtSignedPct(pos.unrealized_plpc)}
                         </span>
@@ -364,21 +375,29 @@ export function Dashboard() {
               <tfoot>
                 <tr className="border-t-2 border-edge text-xs">
                   <td className="py-2 pr-3 font-semibold text-slate-300" colSpan={5}>
-                    Total
+                    Total <span className="font-normal text-slate-500">({baseCcy})</span>
                   </td>
-                  <td className="pr-3 text-right tabular-nums text-slate-400">{fmtUsd(totals.cost)}</td>
-                  <td className="pr-3 text-right tabular-nums text-slate-200">{fmtUsd(totals.mv)}</td>
+                  <td className="pr-3 text-right tabular-nums text-slate-400">{fmtCur(totals.cost, baseCcy)}</td>
+                  <td className="pr-3 text-right tabular-nums text-slate-200">{fmtCur(totals.mv, baseCcy)}</td>
                   <td className={`pr-3 text-right tabular-nums ${signClass(totals.day)}`}>
-                    {fmtSignedUsd(totals.day)}
+                    {fmtSignedCur(totals.day, baseCcy)}
                   </td>
                   <td className={`pr-3 text-right tabular-nums ${signClass(totals.pl)}`}>
-                    {fmtSignedUsd(totals.pl)} ({fmtSignedPct(totalPlPct)})
+                    {fmtSignedCur(totals.pl, baseCcy)} ({fmtSignedPct(totalPlPct)})
                   </td>
                   <td />
                 </tr>
               </tfoot>
             </table>
           </div>
+          {multiCurrency && (
+            <p className="text-[11px] text-slate-500 mt-2">
+              Per-position figures are shown in each holding's local currency; the Total row is
+              converted to your account base currency ({baseCcy}) at IBKR's FX rate, so it
+              reconciles with the balances above.
+            </p>
+          )}
+          </>
         )}
       </Panel>
 

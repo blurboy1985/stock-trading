@@ -107,6 +107,40 @@ def test_ibkr_multi_currency_cash_uses_consolidated_base_row(monkeypatch):
     assert round(account["position_market_value"] + account["cash"], 2) == account["portfolio_value"]
 
 
+def test_ibkr_positions_convert_to_account_base_currency(monkeypatch):
+    """USD holdings in an SGD account expose base-currency values for totals."""
+    from app.brokers import ibkr
+
+    ib = Mock()
+    ib.managedAccounts.return_value = ["DUQ539048"]
+    ib.accountValues.return_value = [
+        SimpleNamespace(account="DUQ539048", tag="NetLiquidation", value="97819.84", currency="SGD"),
+        SimpleNamespace(account="DUQ539048", tag="ExchangeRate", value="1.00", currency="SGD"),
+        SimpleNamespace(account="DUQ539048", tag="ExchangeRate", value="1.2905832", currency="USD"),
+    ]
+    ib.reqPositions.return_value = [
+        SimpleNamespace(
+            account="DUQ539048",
+            position=10.0,
+            avgCost=200.0,
+            contract=SimpleNamespace(symbol="ABBV", exchange="SMART", currency="USD"),
+        ),
+    ]
+    monkeypatch.setattr(ibkr, "_connect", lambda: ib)
+    monkeypatch.setattr(ibkr, "get_latest_trade_price", lambda s: 220.0)
+
+    rows = ibkr.get_positions()
+
+    assert len(rows) == 1
+    pos = rows[0]
+    assert pos["currency"] == "USD"
+    assert pos["base_currency"] == "SGD"
+    # Local figures stay in USD; *_base are converted at the FX rate.
+    assert pos["market_value"] == 2200.0
+    assert round(pos["market_value_base"], 2) == round(2200.0 * 1.2905832, 2)
+    assert round(pos["cost_basis_base"], 2) == round(2000.0 * 1.2905832, 2)
+
+
 def test_ibkr_paper_cash_adjustment_adds_to_account(monkeypatch):
     from app.brokers import ibkr
 

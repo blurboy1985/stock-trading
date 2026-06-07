@@ -266,10 +266,50 @@ def _rows_from_lots(lots: dict[str, dict[str, float]]) -> list[dict[str, Any]]:
     return out
 
 
-def _position_row(symbol: str, qty: float, avg: float) -> dict[str, Any]:
+def _fx_rates(ib: Any) -> tuple[str, dict[str, float]]:
+    """Account base currency and per-currency rates into it.
+
+    IBKR reports ExchangeRate per holding currency where
+    ``value_in_base = value_in_currency * rate`` (the base currency's rate is
+    1.0). Used to convert USD positions into an SGD-based account, so the
+    positions total reconciles with NetLiquidation / GrossPositionValue.
+    """
+    account = _account_id(ib)
+    try:
+        rows = ib.accountValues(account) if account else ib.accountValues()
+    except Exception:
+        rows = []
+    rates: dict[str, float] = {}
+    base = ""
+    for r in rows or []:
+        tag = getattr(r, "tag", "")
+        ccy = (getattr(r, "currency", "") or "").upper()
+        if not ccy or ccy == "BASE":
+            continue
+        if tag == "ExchangeRate":
+            rates[ccy] = safe_float(getattr(r, "value", None), 1.0)
+        elif tag == "NetLiquidation" and not base:
+            base = ccy
+    if not base:
+        base = next((c for c, v in rates.items() if abs(v - 1.0) < 1e-9), "USD")
+    rates.setdefault(base, 1.0)
+    return base, rates
+
+
+def _position_row(
+    symbol: str,
+    qty: float,
+    avg: float,
+    currency: str = "USD",
+    fx_to_base: float = 1.0,
+    base_currency: str | None = None,
+) -> dict[str, Any]:
     price = get_latest_trade_price(symbol) or avg
     mv = qty * price
     cost = qty * avg
+    pl = mv - cost
+    currency = (currency or "USD").upper()
+    base_currency = (base_currency or currency).upper()
     return {
         "symbol": symbol,
         "qty": qty,
@@ -279,7 +319,7 @@ def _position_row(symbol: str, qty: float, avg: float) -> dict[str, Any]:
         "lastday_price": price,
         "market_value": mv,
         "cost_basis": cost,
-        "unrealized_pl": mv - cost,
+        "unrealized_pl": pl,
         "unrealized_plpc": ((price - avg) / avg) if avg else 0.0,
         "unrealized_intraday_pl": 0.0,
         "unrealized_intraday_plpc": 0.0,
@@ -287,6 +327,15 @@ def _position_row(symbol: str, qty: float, avg: float) -> dict[str, Any]:
         "asset_class": "us_equity",
         "exchange": "SMART",
         "side": "long" if qty >= 0 else "short",
+        # Native holding currency plus values converted to the account base
+        # currency, so the dashboard can show per-row local figures while the
+        # totals reconcile with the (base-currency) account balances.
+        "currency": currency,
+        "base_currency": base_currency,
+        "fx_to_base": fx_to_base,
+        "market_value_base": mv * fx_to_base,
+        "cost_basis_base": cost * fx_to_base,
+        "unrealized_pl_base": pl * fx_to_base,
     }
 
 
@@ -334,6 +383,7 @@ def _get_positions_unlocked() -> list[dict[str, Any]]:
             rows = ib.positions(account) if account else ib.positions()
         except Exception:
             rows = []
+    base_ccy, fx = _fx_rates(ib)
     for p in rows:
         c = getattr(p, "contract", None)
         if account and getattr(p, "account", account) != account:
@@ -343,7 +393,10 @@ def _get_positions_unlocked() -> list[dict[str, Any]]:
         if abs(qty) < 1e-9:
             continue
         avg = safe_float(getattr(p, "avgCost", 0))
-        row = _position_row(sym, qty, avg)
+        ccy = (getattr(c, "currency", "") or "USD").upper()
+        row = _position_row(
+            sym, qty, avg, currency=ccy, fx_to_base=fx.get(ccy, 1.0), base_currency=base_ccy
+        )
         row["exchange"] = getattr(c, "exchange", "SMART") or "SMART"
         out.append(row)
     # Full ib.connect() synchronizes positions/portfolio with the broker. Do not
