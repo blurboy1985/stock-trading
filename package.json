@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently --names \"backend,frontend\" --prefix-colors \"cyan,magenta\" \"npm:dev:backend\" \"npm:dev:frontend\"",
-    "dev:backend": "cd backend && .venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --port 8000",
+    "dev:backend": "node scripts/dev-backend.js",
     "dev:frontend": "cd frontend && npm run dev"
   },
   "devDependencies": {
