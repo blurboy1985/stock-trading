@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -75,10 +75,31 @@ function DefRow({ label, value, tone }: { label: string; value: ReactNode; tone?
   );
 }
 
+// "Refreshing" lives outside the component so the in-flight state survives the
+// Dashboard unmounting (e.g. the user clicks Refresh then switches tabs). A
+// plain useState would reset to false on remount, leaving the button active
+// while the refetch is still running.
+const refreshStore = (() => {
+  let refreshing = false;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => refreshing,
+    set: (v: boolean) => {
+      if (refreshing === v) return;
+      refreshing = v;
+      listeners.forEach((l) => l());
+    },
+    subscribe: (cb: () => void) => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+  };
+})();
+
 export function Dashboard() {
   const qc = useQueryClient();
   const [confirmSell, setConfirmSell] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const refreshing = useSyncExternalStore(refreshStore.subscribe, refreshStore.get);
 
   const portfolio = useQuery({
     queryKey: ["portfolio"],
@@ -105,7 +126,7 @@ export function Dashboard() {
   });
 
   const refreshAll = async () => {
-    setRefreshing(true);
+    refreshStore.set(true);
     try {
       await Promise.all([
         qc.refetchQueries({ queryKey: ["portfolio"], exact: true }),
@@ -114,7 +135,7 @@ export function Dashboard() {
         qc.refetchQueries({ queryKey: ["reco"], exact: true }),
       ]);
     } finally {
-      setRefreshing(false);
+      refreshStore.set(false);
     }
   };
 
