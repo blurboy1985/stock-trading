@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { createChart, ColorType, LineSeries, type IChartApi } from "lightweight-charts";
+import { chartTheme, getThemeVersion, subscribeTheme } from "../theme";
 
 interface Point {
   date: string;
@@ -30,27 +31,30 @@ export function EquityChart({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  // Rebuild the chart with fresh palette colors whenever the theme changes.
+  const themeVersion = useSyncExternalStore(subscribeTheme, getThemeVersion);
 
   useEffect(() => {
     if (!containerRef.current) return;
+    const c = chartTheme();
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: "#ffffff" },
-        textColor: "#6e6886",
+        background: { type: ColorType.Solid, color: c.background },
+        textColor: c.text,
       },
-      grid: { vertLines: { color: "#efedf6" }, horzLines: { color: "#efedf6" } },
-      rightPriceScale: { borderColor: "#e7e4f1" },
-      timeScale: { borderColor: "#e7e4f1" },
+      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border },
       autoSize: true,
     });
     chartRef.current = chart;
 
-    const stratSeries = chart.addSeries(LineSeries, { color: "#5b2bd9", lineWidth: 2 });
+    const stratSeries = chart.addSeries(LineSeries, { color: c.accent, lineWidth: 2 });
     stratSeries.setData(toSeriesData(strategy));
 
     if (benchmark && benchmark.length) {
       const benchSeries = chart.addSeries(LineSeries, {
-        color: "#9d97ae",
+        color: c.muted,
         lineWidth: 1,
         lineStyle: 2,
       });
@@ -58,7 +62,7 @@ export function EquityChart({
     }
     chart.timeScale().fitContent();
     return () => chart.remove();
-  }, [strategy, benchmark]);
+  }, [strategy, benchmark, themeVersion]);
 
   return <div ref={containerRef} className="w-full h-[340px]" />;
 }

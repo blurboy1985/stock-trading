@@ -155,8 +155,6 @@ export function Dashboard() {
   const acts: Activity[] = activities.data?.activities ?? [];
 
   const baseCcy = acct?.currency || "USD";
-  const dayPl = acct ? numeric(acct.equity) - numeric(acct.last_equity) : 0;
-  const dayPlPct = acct && numeric(acct.last_equity) ? dayPl / numeric(acct.last_equity) : 0;
 
   // Positions can be held in different currencies (e.g. USD stocks in an
   // SGD-based account). Totals are summed in the account base currency so they
@@ -208,21 +206,20 @@ export function Dashboard() {
       </div>
 
       {/* ── Balances summary ─────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Stat
-          label={`Portfolio Value (${baseCcy})`}
+          label={`Net Liquidation Value (${baseCcy})`}
           value={fmtCur(acct?.portfolio_value, baseCcy)}
-          sub={`${fmtSignedCur(dayPl, baseCcy)} (${fmtSignedPct(dayPlPct)}) today`}
-          tone={dayPl > 0 ? "up" : dayPl < 0 ? "down" : "neutral"}
+          sub={`Unrealized P/L ${fmtSignedCur(totals.pl, baseCcy)} (${fmtSignedPct(totalPlPct)})`}
+          tone={totals.pl > 0 ? "up" : totals.pl < 0 ? "down" : "neutral"}
         />
-        <Stat label="Equity" value={fmtCur(acct?.equity, baseCcy)} sub={`Prev close ${fmtCur(acct?.last_equity, baseCcy)}`} />
         <Stat
-          label="Cash"
+          label={`Cash (${baseCcy})`}
           value={fmtCur(acct?.cash, baseCcy)}
-          sub={`${fmtPct(acct?.equity ? (numeric(acct.cash) / numeric(acct.equity)) : 0)} of equity`}
+          sub={`${fmtPct(acct?.portfolio_value ? numeric(acct.cash) / numeric(acct.portfolio_value) : 0)} of NLV`}
         />
         <Stat
-          label="Buying Power"
+          label={`Buying Power (${baseCcy})`}
           value={fmtCur(acct?.buying_power, baseCcy)}
           sub={`RegT ${fmtCur(acct?.regt_buying_power, baseCcy)}`}
         />

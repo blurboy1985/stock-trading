@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import {
   createChart,
   ColorType,
@@ -7,6 +7,7 @@ import {
   type IChartApi,
 } from "lightweight-charts";
 import type { Bar } from "../api/client";
+import { chartTheme, getThemeVersion, subscribeTheme } from "../theme";
 
 // Price chart via TradingView lightweight-charts. Candles for short windows;
 // a smoother area line once the range is long enough that wicks turn to noise.
@@ -19,20 +20,23 @@ export function PriceChart({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  // Rebuild the chart with fresh palette colors whenever the theme changes.
+  const themeVersion = useSyncExternalStore(subscribeTheme, getThemeVersion);
 
   useEffect(() => {
     if (!containerRef.current) return;
+    const c = chartTheme();
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: "#ffffff" },
-        textColor: "#6e6886",
+        background: { type: ColorType.Solid, color: c.background },
+        textColor: c.text,
       },
       grid: {
-        vertLines: { color: "#efedf6" },
-        horzLines: { color: "#efedf6" },
+        vertLines: { color: c.grid },
+        horzLines: { color: c.grid },
       },
-      rightPriceScale: { borderColor: "#e7e4f1" },
-      timeScale: { borderColor: "#e7e4f1", timeVisible: false },
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border, timeVisible: false },
       autoSize: true,
     });
     chartRef.current = chart;
@@ -40,9 +44,9 @@ export function PriceChart({
     if (variant === "area") {
       const up = bars.length > 1 && bars[bars.length - 1].close >= bars[0].close;
       const series = chart.addSeries(AreaSeries, {
-        lineColor: up ? "#1f9e6b" : "#dc4b5a",
-        topColor: up ? "rgba(31,158,107,0.28)" : "rgba(220,75,90,0.28)",
-        bottomColor: "rgba(255,255,255,0)",
+        lineColor: up ? c.buy : c.sell,
+        topColor: up ? c.buyFill : c.sellFill,
+        bottomColor: c.transparent,
         lineWidth: 2,
         priceLineVisible: false,
       });
@@ -51,11 +55,11 @@ export function PriceChart({
       );
     } else {
       const series = chart.addSeries(CandlestickSeries, {
-        upColor: "#1f9e6b",
-        downColor: "#dc4b5a",
+        upColor: c.buy,
+        downColor: c.sell,
         borderVisible: false,
-        wickUpColor: "#1f9e6b",
-        wickDownColor: "#dc4b5a",
+        wickUpColor: c.buy,
+        wickDownColor: c.sell,
       });
       series.setData(
         bars.map((b) => ({
@@ -69,7 +73,7 @@ export function PriceChart({
     }
     chart.timeScale().fitContent();
     return () => chart.remove();
-  }, [bars, variant]);
+  }, [bars, variant, themeVersion]);
 
   return <div ref={containerRef} className="w-full h-[360px]" />;
 }

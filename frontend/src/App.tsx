@@ -12,6 +12,7 @@ import { Settings } from "./pages/Settings";
 import { DisclaimerFooter } from "./components/Disclosures";
 import { TradeWalkthrough, openTradeGuide } from "./components/TradeWalkthrough";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ThemeToggle } from "./components/ThemeToggle";
 
 const tabs = [
   { to: "/", label: "Dashboard", end: true },
@@ -63,6 +64,7 @@ export default function App() {
               </NavLink>
             ))}
           </nav>
+          <ThemeToggle />
           <button
             onClick={openTradeGuide}
             className="text-xs font-semibold px-3 py-1.5 rounded-full border border-accent/40 text-accent bg-accent/10 hover:bg-accent/20 transition-colors"
