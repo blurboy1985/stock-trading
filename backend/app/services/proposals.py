@@ -144,6 +144,11 @@ def build_from_reco(reco: dict[str, Any]) -> list[dict[str, Any]]:
                 continue
             if (sym, "buy") in pending or (sym, "buy") in open_orders:
                 continue
+            # Don't buy back a stock the core rebalance just sold in this
+            # same cycle — the sell freed capacity for RSP; re-buying it
+            # would create an infinite sell→buy→sell churn loop.
+            if (sym, "sell") in proposed_orders:
+                continue
             price = float(d.get("price") or 0.0)
             if price <= 0:
                 continue

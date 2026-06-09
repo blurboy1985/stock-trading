@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api, type Recommendation } from "../api/client";
@@ -5,7 +6,11 @@ import { Panel, Spinner, ErrorBanner, fmtPct } from "../components/ui";
 import { RegimeBanner } from "../components/RegimeBanner";
 import { SectionGuide } from "../components/SectionGuide";
 
+type LeaderboardMode = "momentum" | "composite";
+
 export function Research() {
+  const [mode, setMode] = useState<LeaderboardMode>("composite");
+
   const reco = useQuery({
     queryKey: ["reco"],
     queryFn: () => api.recommendations(false),
@@ -21,11 +26,18 @@ export function Research() {
     );
   }
 
-  // Relative-strength leaderboard: sort by the momentum signal score.
-  const ranked = [...recs].sort(
-    (a, b) => momScore(b) - momScore(a),
-  );
   const regime = data?.regime;
+
+  // Sort based on selected mode
+  const ranked = [...recs].sort((a, b) => {
+    if (mode === "momentum") return momScore(b) - momScore(a);
+    return b.score - a.score;
+  });
+
+  const lbTitle =
+    mode === "momentum"
+      ? "Relative-Strength Leaderboard"
+      : "Composite Score Leaderboard";
 
   return (
     <div className="space-y-5">
@@ -53,14 +65,47 @@ export function Research() {
           )}
         </Panel>
 
-        <Panel title="Relative-Strength Leaderboard" className="lg:col-span-2">
+        <Panel className="lg:col-span-2">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-slate-100 font-semibold text-sm">{lbTitle}</span>
+            <div className="flex gap-1">
+              {(
+                [
+                  ["composite", "Composite"],
+                  ["momentum", "RS / Momentum"],
+                ] as [LeaderboardMode, string][]
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setMode(key)}
+                  className={`text-xs font-medium px-3 py-1 rounded-full border transition-colors ${
+                    mode === key
+                      ? "bg-accent/15 border-accent/40 text-accent"
+                      : "bg-panel border-edge text-slate-400 hover:bg-panel2"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <table className="w-full text-sm">
             <thead className="text-slate-400 text-xs uppercase">
               <tr className="text-left">
                 <th className="py-2">#</th>
                 <th>Symbol</th>
-                <th>RS score</th>
-                <th>Momentum (raw)</th>
+                {mode === "momentum" ? (
+                  <>
+                    <th>RS score</th>
+                    <th>Momentum (raw)</th>
+                  </>
+                ) : (
+                  <>
+                    <th>Score</th>
+                    <th>Conviction</th>
+                  </>
+                )}
                 <th>Vol (ATR%)</th>
                 <th>Action</th>
               </tr>
@@ -68,6 +113,8 @@ export function Research() {
             <tbody>
               {ranked.map((r, i) => {
                 const mom = r.breakdown?.momentum;
+                const sortVal =
+                  mode === "momentum" ? momScore(r) : r.score;
                 return (
                   <tr key={r.symbol} className="border-t border-edge">
                     <td className="py-1.5 text-slate-500">{i + 1}</td>
@@ -81,17 +128,35 @@ export function Research() {
                         {r.symbol}
                       </Link>
                     </td>
-                    <td
-                      className={`font-mono ${
-                        momScore(r) > 0 ? "text-buy" : momScore(r) < 0 ? "text-sell" : "text-slate-300"
-                      }`}
-                    >
-                      {momScore(r) >= 0 ? "+" : ""}
-                      {momScore(r).toFixed(2)}
-                    </td>
-                    <td className="font-mono text-slate-400">
-                      {numMetric(mom?.metrics?.raw)}
-                    </td>
+                    {mode === "momentum" ? (
+                      <>
+                        <td
+                          className={`font-mono ${
+                            sortVal > 0 ? "text-buy" : sortVal < 0 ? "text-sell" : "text-slate-300"
+                          }`}
+                        >
+                          {sortVal >= 0 ? "+" : ""}
+                          {sortVal.toFixed(2)}
+                        </td>
+                        <td className="font-mono text-slate-400">
+                          {numMetric(mom?.metrics?.raw)}
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td
+                          className={`font-mono ${
+                            sortVal > 0 ? "text-buy" : sortVal < 0 ? "text-sell" : "text-slate-300"
+                          }`}
+                        >
+                          {sortVal >= 0 ? "+" : ""}
+                          {sortVal.toFixed(2)}
+                        </td>
+                        <td className="font-mono text-slate-400">
+                          {r.conviction != null ? r.conviction.toFixed(2) : "—"}
+                        </td>
+                      </>
+                    )}
                     <td className="font-mono text-slate-400">
                       {r.atr_pct != null ? fmtPct(r.atr_pct, 1) : "—"}
                     </td>

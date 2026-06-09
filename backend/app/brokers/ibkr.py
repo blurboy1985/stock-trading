@@ -27,6 +27,24 @@ _connect_lock = threading.RLock()
 _ib_op_lock = threading.RLock()
 
 
+def _invalidate_connection() -> None:
+    """Force next _connect() to open a fresh IBKR session.
+
+    ib_insync's reqPositions() can return stale cached data on a long-lived
+    connection after orders change the portfolio. Disconnecting forces a clean
+    reconnect with fresh position/portfolio state next time the broker is
+    queried.
+    """
+    global _ib
+    with _connect_lock:
+        if _ib is not None:
+            try:
+                _ib.disconnect()
+            except Exception:
+                pass
+            _ib = None
+
+
 def _ensure_event_loop() -> None:
     """Guarantee a current event loop in the calling thread.
 
@@ -712,6 +730,10 @@ def _submit_order_unlocked(symbol: str, qty: float, side: str, order_type: str =
         pass
     status = enumval(getattr(getattr(trade, "orderStatus", None), "status", "submitted"), "submitted")
     oid = str(getattr(getattr(trade, "order", None), "orderId", ""))
+    # Force a fresh connection on the next broker query so positions reflect
+    # the fill. ib_insync's cached reqPositions() can return stale data after
+    # an order changes the portfolio on a long-lived connection.
+    _invalidate_connection()
     return {
         "broker_order_id": oid,
         "alpaca_order_id": oid,
